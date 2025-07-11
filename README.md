@@ -82,7 +82,16 @@ Finally, install the frontend dependencies and start the development server.
 ```bash
 # From your Vue project's root directory
 npm install
-npm run dev
+npm run build
 ```
 
 You can now open your browser to the provided local URL and test the integrated application.
+
+
+### **5. Test the extension browser:
+
+
+```bash
+Go to chrome://extensions/
+Click on load unpacked and select the dist folder
+```
