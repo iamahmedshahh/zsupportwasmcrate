@@ -15,7 +15,7 @@ use zcash_primitives::{
 };
 use zcash_note_encryption::{Domain, EphemeralKeyBytes};
 use zcash_keys::address::Address;
-use blake2b_simd::Hash as Blake2bHash;
+use blake2b_simd::{Hash as Blake2bHash, Params as Blake2bParams};
 
 use rand_core::{RngCore, CryptoRng};
 use hex;
@@ -160,6 +160,50 @@ pub fn generate_symmetric_key_sender_wasm(
     Ok(JsValue::from_str(&result.to_string()))
 }
 
+
+#[wasm_bindgen]
+pub fn prepare_handshake(seed_hex: String, network_id: u32) -> Result<JsValue, JsValue> {
+    let _network = parse_network(network_id).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let seed_bytes = hex::decode(seed_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if seed_bytes.len() < 32 { return Err(JsValue::from_str("Seed must be at least 32 bytes")); }
+
+    let dfvk = internal_generate_dfvk(&seed_bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let (_diversifier, payment_address) = dfvk.default_address();
+    let address = Address::from(payment_address);
+
+    let mut rseed_bytes = [0u8; 32];
+    getrandom::getrandom(&mut rseed_bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let (symmetric_key, epk_bytes) = internal_generate_symmetric_key_sender(&address, &rseed_bytes)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let key_proof = Blake2bParams::new().hash_length(32).hash(symmetric_key.as_bytes());
+
+    let result = serde_json::json!({
+        "ephemeralPublicKey": hex::encode(epk_bytes.0),
+        "keyProof": hex::encode(key_proof.as_bytes())
+    });
+
+    Ok(JsValue::from_str(&result.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn verify_handshake(
+    fvk_hex: String,
+    ephemeral_public_key_hex: String,
+    key_proof_hex: String,
+) -> Result<bool, JsValue> {
+    let fvk_bytes = hex::decode(fvk_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let epk_bytes = hex::decode(ephemeral_public_key_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let provided_proof_bytes = hex::decode(key_proof_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let derived_key = internal_get_symmetric_key_receiver(&fvk_bytes, &epk_bytes)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    let derived_proof = Blake2bParams::new().hash_length(32).hash(derived_key.as_bytes());
+
+    Ok(derived_proof.as_bytes() == provided_proof_bytes.as_slice())
+}
 
 // --- Test will pass because it uses native rust functions ---
 
