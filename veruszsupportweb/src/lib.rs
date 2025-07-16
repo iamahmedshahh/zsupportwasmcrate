@@ -105,7 +105,6 @@ fn internal_generate_symmetric_key_sender(
     Ok((symmetric_key, epk_bytes))
 }
 
-// --- WASM-Exported functions use some internal functions ---
 
 #[wasm_bindgen]
 pub fn generate_sapling_address_from_seed(seed_hex: &str, network_id: u32) -> Result<String, JsValue> {
@@ -205,6 +204,31 @@ pub fn verify_handshake(
     Ok(derived_proof.as_bytes() == provided_proof_bytes.as_slice())
 }
 
+
+#[wasm_bindgen]
+pub fn derive_encryption_address(
+    seed_hex: String,
+    from_id_hex: String,
+    to_id_hex: String,
+    network_id: u32,
+) -> Result<String, JsValue> {
+    let network = parse_network(network_id).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let seed_bytes = hex::decode(seed_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let from_id_bytes = hex::decode(from_id_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let to_id_bytes = hex::decode(to_id_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let combined_data = [seed_bytes, from_id_bytes, to_id_bytes].concat();
+    
+    let new_seed = Blake2bParams::new().hash_length(32).hash(&combined_data);
+
+    let dfvk = internal_generate_dfvk(new_seed.as_bytes())
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        
+    let (_diversifier, payment_address) = dfvk.default_address();
+    let addr = Address::from(payment_address);
+    
+    Ok(addr.encode(&network))
+}
 // --- Test will pass because it uses native rust functions ---
 
 #[cfg(test)]
@@ -234,4 +258,47 @@ mod tests {
         assert_eq!(sender_key, receiver_key);
         println!("\n Native Rust test passed: Sender and Receiver keys match!");
     }
+
+#[test]
+    fn test_derive_encryption_address() {
+    let seed_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string();
+    let from_id_hex = "aaaa".to_string(); // Represents 'alice@'
+    let to_id_hex = "bbbb".to_string();   // Represents 'bob@'
+    
+    // Derive an address for Alice -> Bob
+    let addr1 = derive_encryption_address(
+        seed_hex.clone(),
+        from_id_hex.clone(),
+        to_id_hex.clone(),
+        1 // Testnet
+    ).unwrap();
+    
+    // Derive an address for the same channel, which should be identical
+    let addr1_again = derive_encryption_address(
+        seed_hex.clone(),
+        from_id_hex.clone(),
+        to_id_hex.clone(),
+        1
+    ).unwrap();
+    
+    // Derive an address for a different channel
+    let charlie_id_hex = "cccc".to_string();
+    let addr2 = derive_encryption_address(
+        seed_hex,
+        from_id_hex,
+        charlie_id_hex,
+        1
+    ).unwrap();
+
+    println!("\nAddress (Alice -> Bob): {}", addr1);
+    println!("Address (Alice -> Charlie): {}", addr2);
+    
+    // Assert that the same channel is deterministic
+    assert_eq!(addr1, addr1_again);
+    
+    // Assert that different channels produce different addresses
+    assert_ne!(addr1, addr2);
+
+    println!("✅ Verus-style encryption address derivation works as expected.");
+}
 }

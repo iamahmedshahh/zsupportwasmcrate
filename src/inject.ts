@@ -1,4 +1,3 @@
-
 import init, {
   generate_sapling_address_from_seed,
   generate_sapling_fvk_from_seed,
@@ -6,11 +5,12 @@ import init, {
   get_symmetric_key_receiver_wasm,
   prepare_handshake,
   verify_handshake,
+  derive_encryption_address, 
 } from 'zcash_web_crypto_lib';
 
 /**
- * @param {string} hexString The input hex string.
- * @returns {Uint8Array} The resulting byte array.
+ * @param hexString The input hex string.
+ * @returns The resulting byte array.
  */
 function hexToUint8Array(hexString: string): Uint8Array {
     if (typeof hexString !== 'string' || hexString.length % 2 !== 0) {
@@ -30,32 +30,25 @@ function hexToUint8Array(hexString: string): Uint8Array {
 
 async function initializeApi() {
   try {
-
     await init();
+
     const verusCryptoApi = {
       /**
-       * @param {string} seedHex - A 64-character hexadecimal string representing a 32-byte seed.
-       * @param {number} networkId - The network ID (0 for Mainnet, 1 for Testnet).
-       * @returns {string} The generated Sapling address.
+       * Generates a standard Sapling address.
        */
       generateAddress: (seedHex: string, networkId: 0 | 1): string => {
         return generate_sapling_address_from_seed(seedHex, networkId);
       },
 
       /**
-       * @param {string} seedHex - A 64-character hexadecimal string representing a 32-byte seed.
-       * @param {number} networkId - The network ID (0 for Mainnet, 1 for Testnet).
-       * @returns {string} The hex-encoded Diversifiable Full Viewing Key.
+       * Generates a standard Sapling FVK.
        */
       generateFVK: (seedHex: string, networkId: 0 | 1): string => {
         return generate_sapling_fvk_from_seed(seedHex, networkId);
       },
 
       /**
-       * @param {string} address - The recipient's Sapling address.
-       * @param {string} rseedHex - A 64-character hexadecimal string for the note's randomness.
-       * @param {number} networkId - The network ID (0 for Mainnet, 1 for Testnet).
-       * @returns {{symmetricKey: string, ephemeralPublicKey: string}} An object containing the hex-encoded keys.
+       * Generates a symmetric key for a sender.
        */
       generateSenderSymmetricKey: (address: string, rseedHex: string, networkId: 0 | 1) => {
         const rseedBytes = hexToUint8Array(rseedHex);
@@ -64,10 +57,7 @@ async function initializeApi() {
       },
 
       /**
-       * @param {string} fvkHex - The receiver's hex-encoded Diversifiable Full Viewing Key.
-       * @param {string} ephemeralPublicKeyHex - The ephemeral public key from the sender.
-       * @param {number} networkId - The network ID (0 for Mainnet, 1 for Testnet).
-       * @returns {string} The derived hex-encoded symmetric key.
+       * Derives a symmetric key for a receiver.
        */
       deriveReceiverSymmetricKey: (fvkHex: string, ephemeralPublicKeyHex: string, networkId: 0 | 1): string => {
         const epkBytes = hexToUint8Array(ephemeralPublicKeyHex);
@@ -75,10 +65,7 @@ async function initializeApi() {
       },
       
       /**
-       * Prepares a handshake from the extension's.
-       * @param {string} seedHex - The seed representing the extension's identity.
-       * @param {number} networkId - The network ID.
-       * @returns {{ephemeralPublicKey: string, keyProof: string}} A challenge object.
+       * Prepares a handshake challenge.
        */
       prepareHandshake: (seedHex: string, networkId: 0 | 1) => {
         const resultJson = prepare_handshake(seedHex, networkId);
@@ -86,15 +73,22 @@ async function initializeApi() {
       },
 
       /**
-       * Verifies a handshake.
-       * @param {string} fvkHex - The FVK corresponding to the seed used in prepareHandshake.
-       * @param {string} ephemeralPublicKeyHex - The ephemeral public key from the challenge.
-       * @param {string} keyProofHex - The key proof hash from the challenge.
-       * @returns {boolean} True if the handshake is successful, false otherwise.
+       * Verifies a handshake challenge.
        */
       verifyHandshake: (fvkHex: string, ephemeralPublicKeyHex: string, keyProofHex: string): boolean => {
         return verify_handshake(fvkHex, ephemeralPublicKeyHex, keyProofHex);
       },
+
+      /**
+       * @param {string} seedHex - The user's primary 32-byte seed, as a hex string.
+       * @param {string} fromIdHex - A unique identifier for the sender (e.g., a VerusID), as a hex string.
+       * @param {string} toIdHex - A unique identifier for the recipient (e.g., a VerusID), as a hex string.
+       * @param {number} networkId - The network ID (0 for Mainnet, 1 for Testnet).
+       * @returns {string} The derived single-purpose encryption address.
+       */
+      deriveEncryptionAddress: (seedHex: string, fromIdHex: string, toIdHex: string, networkId: 0 | 1): string => {
+        return derive_encryption_address(seedHex, fromIdHex, toIdHex, networkId);
+      }
     };
 
     (window as any).verusCrypto = verusCryptoApi;
@@ -104,7 +98,7 @@ async function initializeApi() {
     console.log('Verus Crypto API Injected and ready.');
 
   } catch (e) {
-    console.error('Error injecting Verus Crypto API:', e);
+    console.error(' Error injecting Verus Crypto API:', e);
   }
 }
 
