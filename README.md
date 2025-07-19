@@ -95,3 +95,9 @@ You can now open your browser to the provided local URL and test the integrated 
 Go to chrome://extensions/
 Click on load unpacked and select the dist folder
 ```
+
+
+
+## Licensing
+
+This project is licensed under your choice of either the [MIT License](LICENSES/LICENSE-MIT) or the [Apache License, Version 2.0](LICENSES/LICENSE-APACHE-2.0).
