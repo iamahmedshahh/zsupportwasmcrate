@@ -1,0 +1,10 @@
+# Ignore Rust build artifacts
+/target/
+
+# Ignore IDE metadata
+.vscode/
+.idea/
+node_modules
+dist
+.cargo
+veruszsupportweb/target
