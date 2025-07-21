@@ -24,6 +24,8 @@ secrecy = "0.8.0"
 jubjub = "0.10.0"
 blake2b_simd = "1.0.3"
 getrandom = { version = "0.2.16", features = ["js"] }
+chacha20poly1305 = { version = "0.10.1", features = ["heapless"] }
+
 
 # Zcash dependencies using direct git forks to ensure correct code is used.
 # This avoids the issues with the [patch] section and ensures synchronized forks.

@@ -6,6 +6,8 @@ import init, {
   prepare_handshake,
   verify_handshake,
   derive_encryption_address, 
+  encrypt_message,     
+  decrypt_message,
 } from 'zcash_web_crypto_lib';
 
 /**
@@ -64,6 +66,29 @@ async function initializeApi() {
         return get_symmetric_key_receiver_wasm(fvkHex, epkBytes, networkId);
       },
       
+       /**
+       * Encrypts a message for a given Sapling address.
+       * @param {string} address - The recipient's Sapling address.
+       * @param {string} message - The plaintext message to encrypt.
+       * @param {number} networkId - The network ID (0 for Mainnet, 1 for Testnet).
+       * @returns {{ephemeralPublicKey: string, ciphertext: string}} An object with the encrypted data.
+       */
+      encryptMessage: (address: string, message: string, networkId: 0 | 1) => {
+        const resultJson = encrypt_message(address, message, networkId);
+        return JSON.parse(resultJson as string);
+      },
+
+      /**
+       * Decrypts a message using the recipient's FVK.
+       * @param {string} fvkHex - The receiver's hex-encoded Diversifiable Full Viewing Key.
+       * @param {string} ephemeralPublicKeyHex - The ephemeral public key from the sender.
+       * @param {string} ciphertextHex - The hex-encoded ciphertext to decrypt.
+       * @returns {string} The original plaintext message.
+       */
+      decryptMessage: (fvkHex: string, ephemeralPublicKeyHex: string, ciphertextHex: string): string => {
+        return decrypt_message(fvkHex, ephemeralPublicKeyHex, ciphertextHex);
+      },
+
       /**
        * Prepares a handshake challenge.
        */

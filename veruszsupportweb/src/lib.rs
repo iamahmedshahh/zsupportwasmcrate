@@ -19,7 +19,7 @@ use blake2b_simd::{Hash as Blake2bHash, Params as Blake2bParams};
 
 use rand_core::{RngCore, CryptoRng};
 use hex;
-
+use chacha20poly1305::{AeadInPlace, KeyInit, ChaCha20Poly1305};
 
 struct WasmRng;
 impl RngCore for WasmRng {
@@ -204,7 +204,6 @@ pub fn verify_handshake(
     Ok(derived_proof.as_bytes() == provided_proof_bytes.as_slice())
 }
 
-
 #[wasm_bindgen]
 pub fn derive_encryption_address(
     seed_hex: String,
@@ -217,10 +216,18 @@ pub fn derive_encryption_address(
     let from_id_bytes = hex::decode(from_id_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let to_id_bytes = hex::decode(to_id_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    let combined_data = [seed_bytes, from_id_bytes, to_id_bytes].concat();
+    // 1. Derive the standard Sapling account key from the master seed FIRST.
+    let ext_sk = ExtendedSpendingKey::master(&seed_bytes);
+    let account_sk = ext_sk.derive_child(ChildIndex::hardened(0));
+    let account_sk_bytes = account_sk.to_bytes();
+
+    // 2. Concatenate the DERIVED key's bytes with the contextual IDs.
+    let combined_data = [account_sk_bytes.as_ref(), &from_id_bytes, &to_id_bytes].concat();
     
+    // 3. Hash the combined data to create a NEW, unique seed.
     let new_seed = Blake2bParams::new().hash_length(32).hash(&combined_data);
 
+    // 4. Use this new seed to generate the final address.
     let dfvk = internal_generate_dfvk(new_seed.as_bytes())
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
         
@@ -229,6 +236,62 @@ pub fn derive_encryption_address(
     
     Ok(addr.encode(&network))
 }
+
+
+#[wasm_bindgen]
+pub fn encrypt_message(
+    sapling_address_string: String,
+    message: String,
+    network_id: u32,
+) -> Result<JsValue, JsValue> {
+    let network = parse_network(network_id).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let addr = Address::decode(&network, &sapling_address_string)
+        .ok_or_else(|| JsValue::from_str("Address is for the wrong network or invalid"))?;
+
+    let mut rseed_bytes = [0u8; 32];
+    getrandom::getrandom(&mut rseed_bytes).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let (symmetric_key, epk_bytes) = internal_generate_symmetric_key_sender(&addr, &rseed_bytes)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let cipher = ChaCha20Poly1305::new(symmetric_key.as_bytes().into());
+    let nonce = chacha20poly1305::Nonce::default(); // A 96-bit nonce, all zeros is standard here
+    let mut buffer = message.into_bytes(); // Convert the message to bytes
+    cipher.encrypt_in_place(&nonce, b"", &mut buffer)
+        .map_err(|_| JsValue::from_str("Encryption failed"))?;
+
+    let result = serde_json::json!({
+        "ephemeralPublicKey": hex::encode(epk_bytes.0),
+        "ciphertext": hex::encode(buffer)
+    });
+
+    Ok(JsValue::from_str(&result.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_message(
+    fvk_hex: String,
+    ephemeral_public_key_hex: String,
+    ciphertext_hex: String,
+) -> Result<String, JsValue> {
+    let fvk_bytes = hex::decode(fvk_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let epk_bytes = hex::decode(ephemeral_public_key_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    let symmetric_key = internal_get_symmetric_key_receiver(&fvk_bytes, &epk_bytes)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        
+    let mut buffer = hex::decode(ciphertext_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let cipher = ChaCha20Poly1305::new(symmetric_key.as_bytes().into());
+    let nonce = chacha20poly1305::Nonce::default();
+    
+    cipher.decrypt_in_place(&nonce, b"", &mut buffer)
+        .map_err(|_| JsValue::from_str("Decryption failed. The key or ciphertext may be incorrect."))?;
+
+    String::from_utf8(buffer)
+        .map_err(|_| JsValue::from_str("Failed to parse decrypted message as a UTF-8 string."))
+}
+
+
 // --- Test will pass because it uses native rust functions ---
 
 #[cfg(test)]
@@ -293,12 +356,43 @@ mod tests {
     println!("\nAddress (Alice -> Bob): {}", addr1);
     println!("Address (Alice -> Charlie): {}", addr2);
     
-    // Assert that the same channel is deterministic
     assert_eq!(addr1, addr1_again);
     
-    // Assert that different channels produce different addresses
     assert_ne!(addr1, addr2);
 
-    println!("✅ Verus-style encryption address derivation works as expected.");
-}
+    println!("Verus-style encryption address derivation works as expected.");
+    }
+#[test]
+    fn test_message_encryption_decryption_roundtrip() {
+        let mut seed_bytes = [0u8; 32];
+        getrandom::getrandom(&mut seed_bytes).expect("Failed to get random bytes");
+
+        let dfvk = internal_generate_dfvk(&seed_bytes).unwrap();
+        let fvk_bytes = dfvk.to_bytes();
+        
+        let (_diversifier, payment_address) = dfvk.default_address();
+        let address = Address::from(payment_address);
+
+        let original_message = "This is a top secret message.".to_string();
+
+        let mut rseed_bytes = [0u8; 32];
+        getrandom::getrandom(&mut rseed_bytes).unwrap();
+        let (key, epk_bytes) = internal_generate_symmetric_key_sender(&address, &rseed_bytes).unwrap();
+        let cipher = ChaCha20Poly1305::new(key.as_bytes().into());
+        let mut buffer = original_message.clone().into_bytes();
+        cipher.encrypt_in_place(&chacha20poly1305::Nonce::default(), b"", &mut buffer).unwrap();
+        let ciphertext_bytes = buffer;
+
+        let decrypted_message_bytes = {
+            let key = internal_get_symmetric_key_receiver(&fvk_bytes, &epk_bytes.0).unwrap();
+            let cipher = ChaCha20Poly1305::new(key.as_bytes().into());
+            let mut buffer = ciphertext_bytes.clone();
+            cipher.decrypt_in_place(&chacha20poly1305::Nonce::default(), b"", &mut buffer).unwrap();
+            buffer
+        };
+        let decrypted_message = String::from_utf8(decrypted_message_bytes).unwrap();
+
+        assert_eq!(original_message, decrypted_message);
+        println!("\nMessage encryption/decryption roundtrip test passed!");
+    }
 }
