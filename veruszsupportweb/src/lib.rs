@@ -216,18 +216,18 @@ pub fn derive_encryption_address(
     let from_id_bytes = hex::decode(from_id_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let to_id_bytes = hex::decode(to_id_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    // 1. Derive the standard Sapling account key from the master seed FIRST.
+        // Derive the standard Sapling account key from the master seed first
     let ext_sk = ExtendedSpendingKey::master(&seed_bytes);
     let account_sk = ext_sk.derive_child(ChildIndex::hardened(0));
     let account_sk_bytes = account_sk.to_bytes();
 
-    // 2. Concatenate the DERIVED key's bytes with the contextual IDs.
+    // concatenate the key with to and from id
     let combined_data = [account_sk_bytes.as_ref(), &from_id_bytes, &to_id_bytes].concat();
     
-    // 3. Hash the combined data to create a NEW, unique seed.
+    // hashing the combined data to create a unique seed.
     let new_seed = Blake2bParams::new().hash_length(32).hash(&combined_data);
 
-    // 4. Use this new seed to generate the final address.
+    // Using this new seed to generate the final address.
     let dfvk = internal_generate_dfvk(new_seed.as_bytes())
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
         
@@ -236,7 +236,6 @@ pub fn derive_encryption_address(
     
     Ok(addr.encode(&network))
 }
-
 
 #[wasm_bindgen]
 pub fn encrypt_message(
