@@ -1,214 +1,136 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 
-// 1. Import the new FVK generator function
-import init, {
-  generate_sapling_address_from_seed,
-  generate_sapling_fvk_from_seed, // <-- ADD THIS
-  generate_symmetric_key_sender_wasm,
-  get_symmetric_key_receiver_wasm,
-} from 'zcash_web_crypto_lib';
+interface VerusCryptoAPI {
+  generateChannelKeys: (seedHex: string, fromIdHex: string, toIdHex: string, networkId: 0 | 1) => { address: string, fvk: string };
+  encryptMessage: (address: string, message: string, networkId: 0 | 1) => { ephemeralPublicKey: string, ciphertext: string };
+  decryptMessage: (fvkHex: string, ephemeralPublicKeyHex: string, ciphertextHex: string) => string;
+}
 
-const wasmInitialized = ref(false);
-const seedHex = ref(''.padStart(64, 'a'));
-const saplingAddress = ref('');
-const error = ref('');
-
+const isApiReady = ref(false);
 const testInProgress = ref(false);
 const testError = ref('');
 const testResults = ref<Record<string, any> | null>(null);
 
+const seedHex = ref(''.padStart(64, 'a'));
+const fromIdHex = ref('616c69636540'); 
+const toIdHex = ref('626f6240');     
+const messageToEncrypt = ref('This is a secret message for a private channel!');
 
-// Initialize the WASM module when the component is mounted
-onMounted(async () => {
-  try {
-    await init();
-    wasmInitialized.value = true;
-    console.log("WASM Initialized in App.vue");
-  } catch (e) {
-    console.error("Error initializing WASM", e);
-    error.value = "Failed to load the crypto module.";
-  }
+onMounted(() => {
+  const setupApi = () => {
+    if ((window as any).verusCrypto) {
+      isApiReady.value = true;
+    }
+  };
+  window.addEventListener('verusCryptoReady', setupApi);
+  setupApi();
 });
 
-function generateAddress() {
-  if (!wasmInitialized.value) {
-    error.value = "WASM module not ready.";
+async function runFullTest() {
+  if (!isApiReady.value) {
+    testError.value = "API is not ready.";
     return;
   }
-  error.value = '';
-  saplingAddress.value = '';
-  try {
-    const address = generate_sapling_address_from_seed(seedHex.value, 0); // Network 1 = Testnet
-    saplingAddress.value = address;
-  } catch (e) {
-    console.error(e);
-    error.value = `An error occurred: ${e}`;
-  }
-}
-
-function getRandomHex(bytes: number): string {
-  const buffer = new Uint8Array(bytes);
-  crypto.getRandomValues(buffer);
-  return Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function runSymmetricKeyTest() {
-  if (!wasmInitialized.value) {
-    testError.value = "WASM module not ready.";
-    return;
-  }
+  
   testError.value = '';
   testResults.value = null;
   testInProgress.value = true;
 
   try {
-    const testSeed = getRandomHex(32);
-    const networkId = 0; // Mainnet = 0, Testnet = 1
+    const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
+    const networkId = 0; // 1 = Testnet
 
-    const address = generate_sapling_address_from_seed(testSeed, networkId);
-    
-    const fvkStringForTest = generate_sapling_fvk_from_seed(testSeed, networkId);
-
-    const rseed = getRandomHex(32);
-
-    const senderResultJson = generate_symmetric_key_sender_wasm(address, hexToUint8Array(rseed), networkId);
-    const senderResult = JSON.parse(senderResultJson);
-
-    const receiverKey = get_symmetric_key_receiver_wasm(
-      fvkStringForTest,
-      hexToUint8Array(senderResult.ephemeral_public_key),
+    const channel = verusCrypto.generateChannelKeys(
+      seedHex.value,
+      fromIdHex.value,
+      toIdHex.value,
       networkId
     );
 
-    const keysMatch = senderResult.symmetric_key === receiverKey;
+    const encryptedPayload = await verusCrypto.encryptMessage(
+      channel.address,
+      messageToEncrypt.value,
+      networkId
+    );
 
+    const decryptedMessage = await verusCrypto.decryptMessage(
+      channel.fvk,
+      encryptedPayload.ephemeralPublicKey,
+      encryptedPayload.ciphertext
+    );
+
+    const messagesMatch = messageToEncrypt.value === decryptedMessage;
     testResults.value = {
-      'Test Seed': testSeed,
-      'Derived Address': address,
-      'Derived FVK (Hex)': fvkStringForTest,
-      'Sender Rseed': rseed,
-      '--- Sender Output ---': ' ',
-      'Ephemeral Public Key': senderResult.ephemeral_public_key,
-      'Sender\'s Symmetric Key': senderResult.symmetric_key,
-      '--- Receiver Output ---': ' ',
-      'Receiver\'s Symmetric Key': receiverKey,
-      '--- Verification ---': ' ',
-      'Keys Match?': keysMatch ? '✅ Yes' : '❌ No',
+      '--- Channel Setup ---': '',
+      'Channel Address': channel.address,
+      'Channel FVK': `${channel.fvk.substring(0, 40)}...`,
+      '--- Encryption ---': '',
+      'Original Message': messageToEncrypt.value,
+      'Ciphertext': `${encryptedPayload.ciphertext.substring(0, 40)}...`,
+      '--- Decryption ---': '',
+      'Decrypted Message': decryptedMessage,
+      '--- Verification ---': '',
+      'Success?': messagesMatch ? 'Yes, messages match!' : ' No, messages do not match!',
     };
 
   } catch (e: any) {
-    console.error("Symmetric key test failed:", e);
-    testError.value = `Test failed: ${e.message || e}`;
+    console.error("Test failed:", e);
+    testError.value = e.message || 'An unknown error occurred.';
   } finally {
     testInProgress.value = false;
   }
 }
-
-function hexToUint8Array(hexString: string): Uint8Array {
-    if (hexString.length % 2 !== 0) {
-        throw "Invalid hexString";
-    }
-    const arrayBuffer = new Uint8Array(hexString.length / 2);
-    for (let i = 0; i < hexString.length; i += 2) {
-        const byteValue = parseInt(hexString.substr(i, 2), 16);
-        if (isNaN(byteValue)) {
-            throw "Invalid hexString";
-        }
-        arrayBuffer[i / 2] = byteValue;
-    }
-    return arrayBuffer;
-}
 </script>
+
 <template>
+  <div class="test-interface">
+    <h2>Verus-Style End-to-End Encryption Test</h2>
+    <div v-if="!isApiReady" class="status pending">Waiting for Verus Crypto API...</div>
+    <div v-else class="status ready">API Ready</div>
+    
+    <div>
+      <label for="seed">Master Seed (Hex):</label>
+      <input id="seed" v-model="seedHex" size="70" />
+    </div>
+    <div>
+      <label for="fromId">From ID (Hex):</label>
+      <input id="fromId" v-model="fromIdHex" />
+    </div>
+     <div>
+      <label for="toId">To ID (Hex):</label>
+      <input id="toId" v-model="toIdHex" />
+    </div>
+    <div>
+      <label for="message">Message to Encrypt:</label>
+      <input id="message" v-model="messageToEncrypt" />
+    </div>
 
-  <div class="wallet-interface">
-    <h2>Sapling Address Generator</h2>
-    <div v-if="!wasmInitialized" class="loading">Loading Crypto Module...</div>
-    <div v-else>
-      <div>
-        <label for="seed">Seed (64 hex characters):</label>
-        <input id="seed" v-model="seedHex" size="70" />
-      </div>
-      <button @click="generateAddress">Generate Address</button>
-      <div v-if="error" class="error">{{ error }}</div>
-      <div v-if="saplingAddress" class="result">
-        <strong>Generated Testnet Address:</strong>
-        <pre>{{ saplingAddress }}</pre>
-      </div>
+    <button @click="runFullTest" :disabled="!isApiReady || testInProgress">
+      {{ testInProgress ? 'Running...' : 'Run Full Test' }}
+    </button>
+    
+    <div v-if="testError" class="error">
+      <strong>Error:</strong>
+      <pre>{{ testError }}</pre>
+    </div>
+
+    <div v-if="testResults" class="result">
+      <strong>Test Results:</strong>
+      <pre>{{ JSON.stringify(testResults, null, 2) }}</pre>
     </div>
   </div>
-
-  <hr>
-
-  <div class="wallet-interface">
-    <h2>End-to-End Symmetric Key Test</h2>
-    <div v-if="!wasmInitialized" class="loading">Loading Crypto Module...</div>
-    <div v-else>
-      <button @click="runSymmetricKeyTest" :disabled="testInProgress">
-        {{ testInProgress ? 'Running Test...' : 'Run Full Test' }}
-      </button>
-      <div v-if="testError" class="error">{{ testError }}</div>
-      <div v-if="testResults" class="result">
-        <strong>Test Results:</strong>
-        <pre>{{ JSON.stringify(testResults, null, 2) }}</pre>
-      </div>
-    </div>
-  </div>
-
 </template>
 
 <style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
-}
-
-hr {
-  margin: 2em 0;
-}
-.wallet-interface {
-  text-align: left;
-  max-width: 600px;
-  margin: 2em auto;
-  padding: 1em;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-}
-.wallet-interface input {
-  width: 100%;
-  padding: 8px;
-  margin: 8px 0;
-  box-sizing: border-box;
-}
-.wallet-interface button {
-  padding: 10px 15px;
-  cursor: pointer;
-}
-.wallet-interface button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-.error {
-  color: red;
-  margin-top: 10px;
-}
-.result {
-  margin-top: 10px;
-  word-wrap: break-word;
-}
-.result pre {
-  background-color: #000000;
-  padding: 10px;
-  border-radius: 5px;
-  white-space: pre-wrap;
-}
+.test-interface { max-width: 600px; margin: 2em auto; padding: 1.5em; border: 1px solid #444; border-radius: 8px; }
+.status { margin-bottom: 1em; font-weight: bold; }
+.pending { color: #f0ad4e; }
+.ready { color: #5cb85c; }
+input { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; background-color: #333; color: #eee; border: 1px solid #555; border-radius: 4px; }
+button { padding: 10px 15px; cursor: pointer; border-radius: 5px; border: 1px solid transparent; transition: background-color 0.2s; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.result, .error { margin-top: 1em; word-wrap: break-word; text-align: left; }
+.result pre, .error pre { background-color: #282c34; color: #abb2bf; padding: 10px; border-radius: 5px; white-space: pre-wrap; }
+.error pre { color: #ff5555; }
 </style>
