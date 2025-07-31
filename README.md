@@ -20,7 +20,7 @@ Before you begin, ensure you have the following tools installed:
 
   * **Rust:** [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
   * **wasm-pack:** `cargo install wasm-pack`
-  * **Vite Project:** (https://vite.dev/guide/)
+  * **Rustup:** sudo apt install rustup
 
 -----
 
@@ -85,9 +85,6 @@ npm install
 npm run build
 ```
 
-You can now open your browser to the provided local URL and test the integrated application.
-
-
 ### **5. Test the extension browser:
 
 
@@ -96,7 +93,15 @@ Go to chrome://extensions/
 Click on load unpacked and select the dist folder
 ```
 
+### **6. Test the interaction with a web app?:
 
+```bash
+npm run dev
+```
+
+Open the Url the extension API's are being exposed in the App.vue
+
+If you get errors make sure you are on the latest Node Version, use LTS
 
 ## Licensing
 

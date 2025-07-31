@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 
+interface RpcParams {
+  seed?: string;
+  spendingKey?: string;
+  hdIndex?: number;
+  encryptionIndex?: number;
+  fromId: string;
+  toId: string;
+}
+
 interface VerusCryptoAPI {
-  generateChannelKeys: (seedHex: string, fromIdHex: string, toIdHex: string, networkId: 0 | 1) => { address: string, fvk: string };
-  encryptMessage: (address: string, message: string, networkId: 0 | 1) => { ephemeralPublicKey: string, ciphertext: string };
+  zGetEncryptionAddress: (params: RpcParams) => { address: string, fvk: string };
+  encryptMessage: (address: string, message: string) => { ephemeralPublicKey: string, ciphertext: string };
   decryptMessage: (fvkHex: string, ephemeralPublicKeyHex: string, ciphertextHex: string) => string;
 }
 
@@ -12,10 +21,13 @@ const testInProgress = ref(false);
 const testError = ref('');
 const testResults = ref<Record<string, any> | null>(null);
 
+// Inputs for the test
 const seedHex = ref(''.padStart(64, 'a'));
-const fromIdHex = ref('616c69636540'); 
-const toIdHex = ref('626f6240');     
-const messageToEncrypt = ref('This is a secret message for a private channel!');
+const fromIdHex = ref('616c69636540'); // "alice@" in hex
+const toIdHex = ref('626f6240');     // "bob@" in hex
+const messageToEncrypt = ref('This is a secret message!');
+const hdIndex = ref(0);
+const encryptionIndex = ref(0);
 
 onMounted(() => {
   const setupApi = () => {
@@ -27,6 +39,7 @@ onMounted(() => {
   setupApi();
 });
 
+// 2. Update the test function to use the new object-based parameters
 async function runFullTest() {
   if (!isApiReady.value) {
     testError.value = "API is not ready.";
@@ -39,27 +52,33 @@ async function runFullTest() {
 
   try {
     const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
-    const networkId = 0; // 1 = Testnet
 
-    const channel = verusCrypto.generateChannelKeys(
-      seedHex.value,
-      fromIdHex.value,
-      toIdHex.value,
-      networkId
-    );
+    // Construct the parameter object
+    const params: RpcParams = {
+      seed: seedHex.value,
+      fromId: fromIdHex.value,
+      toId: toIdHex.value,
+      hdIndex: hdIndex.value,
+      encryptionIndex: encryptionIndex.value,
+    };
 
+    // Generate the channel keys using the new method
+    const channel = verusCrypto.zGetEncryptionAddress(params);
+
+    // Encrypt a message using the channel's address
     const encryptedPayload = await verusCrypto.encryptMessage(
       channel.address,
-      messageToEncrypt.value,
-      networkId
+      messageToEncrypt.value
     );
 
+    // Decrypt the message using the channel's FVK
     const decryptedMessage = await verusCrypto.decryptMessage(
       channel.fvk,
       encryptedPayload.ephemeralPublicKey,
       encryptedPayload.ciphertext
     );
 
+    // Verify the result and display
     const messagesMatch = messageToEncrypt.value === decryptedMessage;
     testResults.value = {
       '--- Channel Setup ---': '',
@@ -71,7 +90,7 @@ async function runFullTest() {
       '--- Decryption ---': '',
       'Decrypted Message': decryptedMessage,
       '--- Verification ---': '',
-      'Success?': messagesMatch ? 'Yes, messages match!' : ' No, messages do not match!',
+      'Success?': messagesMatch ? ' Yes, messages match!' : ' No, messages do not match!',
     };
 
   } catch (e: any) {
@@ -87,10 +106,10 @@ async function runFullTest() {
   <div class="test-interface">
     <h2>Verus-Style End-to-End Encryption Test</h2>
     <div v-if="!isApiReady" class="status pending">Waiting for Verus Crypto API...</div>
-    <div v-else class="status ready">API Ready</div>
+    <div v-else class="status ready"> API Ready</div>
     
     <div>
-      <label for="seed">Master Seed (Hex):</label>
+      <label for="seed">Master Seed:</label>
       <input id="seed" v-model="seedHex" size="70" />
     </div>
     <div>
@@ -100,6 +119,14 @@ async function runFullTest() {
      <div>
       <label for="toId">To ID (Hex):</label>
       <input id="toId" v-model="toIdHex" />
+    </div>
+    <div>
+      <label for="hdIndex">HD Index (for initial derivation):</label>
+      <input id="hdIndex" type="number" v-model="hdIndex" />
+    </div>
+    <div>
+      <label for="encryptionIndex">Encryption Index (for final derivation):</label>
+      <input id="encryptionIndex" type="number" v-model="encryptionIndex" />
     </div>
     <div>
       <label for="message">Message to Encrypt:</label>
