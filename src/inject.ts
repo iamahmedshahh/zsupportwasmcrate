@@ -13,6 +13,12 @@ interface ZGetEncryptionAddressParams {
   toId: string;
 }
 
+interface DecryptParams {
+  fvkHex?: string;
+  ephemeralPublicKeyHex?: string;
+  ciphertextHex: string;
+  symmetricKeyHex?: string;
+}
 
 async function initializeApi() {
   try {
@@ -32,26 +38,26 @@ async function initializeApi() {
       },
 
       /**
-       * Encrypts a message for a given Sapling address on Mainnet.
+       * Encrypts a message for a given Sapling address.
        * @param {string} address - The recipient's Sapling address.
        * @param {string} message - The plaintext message to encrypt.
-       * @returns {{ephemeralPublicKey: string, ciphertext: string}} An object with the encrypted data.
+       * @param {boolean} returnSsk - If true, the final symmetric key will be returned.
+       * @returns {{ephemeralPublicKey: string, ciphertext: string, symmetricKey?: string}}
        */
-      encryptMessage: (address: string, message: string) => {
-        return encrypt_message(address, message);
+      encryptMessage: (address: string, message: string, returnSsk: boolean) => {
+        return encrypt_message(address, message, returnSsk);
       },
 
       /**
-       * Decrypts a message using the recipient's FVK.
-       * @param {string} fvkHex - The receiver's hex-encoded DFVK for the channel.
-       * @param {string} ephemeralPublicKeyHex - The ephemeral public key from the sender.
-       * @param {string} ciphertextHex - The hex-encoded ciphertext to decrypt.
+       * Decrypts a message using either an FVK or a direct symmetric key.
+       * @param {DecryptParams} params - The parameters for decryption.
        * @returns {string} The original plaintext message.
        */
-      decryptMessage: (fvkHex: string, ephemeralPublicKeyHex: string, ciphertextHex: string): string => {
-        return decrypt_message(fvkHex, ephemeralPublicKeyHex, ciphertextHex);
+      decryptMessage: (params: DecryptParams): string => {
+        return decrypt_message(params);
       },
     };
+
 
     (window as any).verusCrypto = verusCryptoApi;
     window.dispatchEvent(new CustomEvent('verusCryptoReady'));

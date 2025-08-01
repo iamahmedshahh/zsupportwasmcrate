@@ -153,12 +153,29 @@ struct ChannelKeys {
     fvk: String,
 }
 
-// NEW Struct for the encrypted payload
+// struct for the encrypted payload
 #[derive(Serialize)]
 struct EncryptedPayload {
     #[serde(rename = "ephemeralPublicKey")]
     ephemeral_public_key: String,
     ciphertext: String,
+
+    // adding optional parameter
+    #[serde(rename = "symmetricKey", skip_serializing_if = "Option::is_none")]
+    symmetric_key: Option<String>,
+}
+
+// struct for flexible decryption parameters
+#[derive(Deserialize)]
+struct DecryptParams {
+    #[serde(rename = "fvkHex")]
+    fvk_hex: Option<String>,
+    #[serde(rename = "ephemeralPublicKeyHex")]
+    ephemeral_public_key_hex: Option<String>,
+    #[serde(rename = "ciphertextHex")]
+    ciphertext_hex: String,
+    #[serde(rename = "symmetricKeyHex")]
+    symmetric_key_hex: Option<String>,
 }
 
 
@@ -191,7 +208,7 @@ pub fn z_getencryptionaddress(params: JsValue) -> Result<JsValue, JsValue> {
     let to_id_bytes = hex::decode(params.to_id).map_err(|e| e.to_string())?;
 
     // hash the derived base key with the fromid and toid using sha256
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha256::default();
     let mut base_sk_bytes = vec![];
     base_sk.write(&mut base_sk_bytes).map_err(|e| e.to_string())?;
     hasher.update(&base_sk_bytes);
@@ -228,6 +245,7 @@ pub fn z_getencryptionaddress(params: JsValue) -> Result<JsValue, JsValue> {
 pub fn encrypt_message(
     address_string: String,
     message: String,
+    return_ssk: bool,
 ) -> Result<JsValue, JsValue> {
     let network = Network::MainNetwork;
 
@@ -257,27 +275,44 @@ pub fn encrypt_message(
     let result = EncryptedPayload {
         ephemeral_public_key: hex::encode(epk_bytes.0),
         ciphertext: hex::encode(buffer),
+        // added ssk as an optional field
+        symmetric_key: if return_ssk {
+            Some(hex::encode(symmetric_key.as_bytes()))
+        } else {
+            None
+        },
     };
 
     Ok(serde_wasm_bindgen::to_value(&result)?)
 }
 
 #[wasm_bindgen]
-pub fn decrypt_message(
-    fvk_hex: String,
-    ephemeral_public_key_hex: String,
-    ciphertext_hex: String,
-) -> Result<String, JsValue> {
-    // decode hex strings from javascript into raw byte arrays
-    let fvk_bytes = hex::decode(fvk_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let epk_bytes = hex::decode(ephemeral_public_key_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+pub fn decrypt_message(params: JsValue) -> Result<String, JsValue> {
+    // parse the incoming JS object into our DecryptParams struct
+    let params: DecryptParams = serde_wasm_bindgen::from_value(params)?;
 
-     // re-derive the shared symmetric key using the internal receiver logic
-    let symmetric_key = internal_get_symmetric_key_receiver(&fvk_bytes, &epk_bytes)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    // determine which decryption key to use.
+    let symmetric_key = if let Some(ssk_hex) = params.symmetric_key_hex {
+        // decrypt using the provided SSK directly
+        let ssk_bytes_vec = hex::decode(ssk_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let ssk_bytes: [u8; 32] = ssk_bytes_vec.try_into().map_err(|_| JsValue::from_str("SSK must be 32 bytes"))?;
+        
+        // create the hash by value instead of reference
+        let mut key_buffer = [0u8; 64];
+        key_buffer[..32].copy_from_slice(&ssk_bytes);
+        Blake2bHash::from(key_buffer)
+
+    } else if let (Some(fvk_hex), Some(epk_hex)) = (params.fvk_hex, params.ephemeral_public_key_hex) {
+        // derive the key using the FVK the normal way
+        let fvk_bytes = hex::decode(fvk_hex).map_err(|e| e.to_string())?;
+        let epk_bytes = hex::decode(epk_hex).map_err(|e| e.to_string())?;
+        internal_get_symmetric_key_receiver(&fvk_bytes, &epk_bytes).map_err(|e| e.to_string())?
+    } else {
+        return Err(JsValue::from_str("Must provide either a symmetricKeyHex or both fvkHex and ephemeralPublicKeyHex"));
+    };
 
     // decode the ciphertext hex into a mutable byte buffer for in-place decryption
-    let mut buffer = hex::decode(ciphertext_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let mut buffer = hex::decode(params.ciphertext_hex).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     // initialize the chacha20poly1305 cipher with the derived key
     let cipher = ChaCha20Poly1305::new(symmetric_key.as_bytes().into());

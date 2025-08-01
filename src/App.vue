@@ -10,10 +10,17 @@ interface RpcParams {
   toId: string;
 }
 
+interface DecryptParams {
+  fvkHex?: string;
+  ephemeralPublicKeyHex?: string;
+  ciphertextHex: string;
+  symmetricKeyHex?: string;
+}
+
 interface VerusCryptoAPI {
   zGetEncryptionAddress: (params: RpcParams) => { address: string, fvk: string };
-  encryptMessage: (address: string, message: string) => { ephemeralPublicKey: string, ciphertext: string };
-  decryptMessage: (fvkHex: string, ephemeralPublicKeyHex: string, ciphertextHex: string) => string;
+  encryptMessage: (address: string, message: string, returnSsk: boolean) => { ephemeralPublicKey: string, ciphertext: string, symmetricKey?: string };
+  decryptMessage: (params: DecryptParams) => string;
 }
 
 const isApiReady = ref(false);
@@ -39,7 +46,7 @@ onMounted(() => {
   setupApi();
 });
 
-// 2. Update the test function to use the new object-based parameters
+// Update the test function to use the new object-based parameters
 async function runFullTest() {
   if (!isApiReady.value) {
     testError.value = "API is not ready.";
@@ -68,15 +75,16 @@ async function runFullTest() {
     // Encrypt a message using the channel's address
     const encryptedPayload = await verusCrypto.encryptMessage(
       channel.address,
-      messageToEncrypt.value
+      messageToEncrypt.value,
+      true
     );
 
     // Decrypt the message using the channel's FVK
-    const decryptedMessage = await verusCrypto.decryptMessage(
-      channel.fvk,
-      encryptedPayload.ephemeralPublicKey,
-      encryptedPayload.ciphertext
-    );
+    const decryptedMessage = await verusCrypto.decryptMessage({
+      fvkHex: channel.fvk,
+      ephemeralPublicKeyHex: encryptedPayload.ephemeralPublicKey,
+      ciphertextHex: encryptedPayload.ciphertext,
+    });
 
     // Verify the result and display
     const messagesMatch = messageToEncrypt.value === decryptedMessage;
@@ -86,6 +94,7 @@ async function runFullTest() {
       'Channel FVK': `${channel.fvk.substring(0, 40)}...`,
       '--- Encryption ---': '',
       'Original Message': messageToEncrypt.value,
+      'Returned SSK': `${encryptedPayload.symmetricKey?.substring(0, 40) || 'Not Requested'}...`,
       'Ciphertext': `${encryptedPayload.ciphertext.substring(0, 40)}...`,
       '--- Decryption ---': '',
       'Decrypted Message': decryptedMessage,
