@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 
-// --- Define the shape of your final API ---
 interface RpcParams {
   seed?: string;
   spendingKey?: string;
@@ -23,13 +22,11 @@ interface VerusCryptoAPI {
   decryptMessage: (params: DecryptParams) => string;
 }
 
-// --- State Variables ---
 const isApiReady = ref(false);
 const testInProgress = ref(false);
 const testError = ref('');
 const testResults = ref<Record<string, any> | null>(null);
 
-// UI Inputs
 const inputMode = ref('seed'); // 'seed' or 'spendingKey'
 const seedHex = ref(''.padStart(64, 'a'));
 const spendingKeyHex = ref('');
@@ -49,7 +46,7 @@ onMounted(() => {
   setupApi();
 });
 
-// Function to pre-fill the spending key input for easy testing
+// function to pre-fill the spending key input for easy testing
 function generateAndSetSpendingKey() {
   if (!isApiReady.value) return;
   const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
@@ -69,7 +66,7 @@ async function runFullTest() {
   try {
     const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
 
-    // A. Construct the parameter object based on the selected input mode
+    // construct the parameter object based on the selected input mode
     let params: RpcParams;
     if (inputMode.value === 'seed') {
       params = {
@@ -79,7 +76,7 @@ async function runFullTest() {
         hdIndex: hdIndex.value,
         encryptionIndex: encryptionIndex.value,
       };
-    } else { // inputMode is 'spendingKey'
+    } else {
       if (!spendingKeyHex.value) throw new Error("Spending key is required for this mode.");
       params = {
         spendingKey: spendingKeyHex.value,
@@ -89,24 +86,24 @@ async function runFullTest() {
       };
     }
 
-    // B. Generate the channel keys
+    // generate the channel keys
     const channel = verusCrypto.zGetEncryptionAddress(params);
 
-    // C. Encrypt a message, requesting the SSK back
+    // encrypt a message, requesting the SSK back
     const encryptedPayload = await verusCrypto.encryptMessage(
       channel.address,
       messageToEncrypt.value,
       true // returnSsk = true
     );
 
-    // D. Decrypt the message using the flexible object parameter
+    // decrypt the message using the flexible object parameter
     const decryptedMessage = await verusCrypto.decryptMessage({
       fvkHex: channel.fvk,
       ephemeralPublicKeyHex: encryptedPayload.ephemeralPublicKey,
       ciphertextHex: encryptedPayload.ciphertext,
     });
     
-    // E. Verify the result and display
+    // verify the result and display
     const messagesMatch = messageToEncrypt.value === decryptedMessage;
     testResults.value = {
       'Input Mode': inputMode.value,
@@ -184,7 +181,7 @@ async function runFullTest() {
 </template>
 
 <style scoped>
-/* Your existing styles are fine */
+
 .test-interface { max-width: 600px; margin: 2em auto; padding: 1.5em; border: 1px solid #444; border-radius: 8px; }
 .status { margin-bottom: 1em; font-weight: bold; }
 .pending { color: #f0ad4e; }
