@@ -2,7 +2,8 @@ import init, {
   z_getencryptionaddress, 
   encrypt_message,
   decrypt_message,
-} from 'zcash_web_crypto_lib';
+  generate_spending_key
+} from 'veruszsupport';
 
 interface ZGetEncryptionAddressParams {
   seed?: string;
@@ -27,6 +28,16 @@ async function initializeApi() {
     const verusCryptoApi = {
       version: '4.0.0', 
 
+      /**
+       * Generates a hex-encoded Sapling extended spending key for a given account.
+       * @param {string} seedHex - The master seed for the wallet.
+       * @param {number} hdIndex - The account index to derive.
+       * @returns {string} The hex-encoded extended spending key.
+       */
+      generateSpendingKey: (seedHex: string, hdIndex: number): string => {
+        return generate_spending_key(seedHex, hdIndex);
+      },
+      
       /**
        * Generates a unique, unlinkable Sapling address and its corresponding FVK.
        * This is a flexible API that can derive from a seed or a spending key.

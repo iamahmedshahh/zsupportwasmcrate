@@ -1,5 +1,5 @@
 [package]
-name = "zcash_web_crypto_lib"
+name = "veruszsupport"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"

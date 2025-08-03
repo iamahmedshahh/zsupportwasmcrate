@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "polyfill": "^0.1.0",
+    "veruszsupport": "file:veruszsupportweb/pkg",
     "vue": "^3.5.17",
     "zcash_web_crypto_lib": "file:veruszsupportweb/pkg"
   },

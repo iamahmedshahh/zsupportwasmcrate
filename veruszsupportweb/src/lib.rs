@@ -241,6 +241,28 @@ pub fn z_getencryptionaddress(params: JsValue) -> Result<JsValue, JsValue> {
     Ok(serde_wasm_bindgen::to_value(&channel_keys)?)
 }
 
+
+// Add this function to your WASM-Exported Functions section in lib.rs
+
+#[wasm_bindgen]
+pub fn generate_spending_key(seed_hex: String, hd_index: u32) -> Result<String, JsValue> {
+    let seed_bytes = hex::decode(seed_hex).map_err(|e| e.to_string())?;
+    if seed_bytes.len() < 32 { return Err(JsValue::from_str("Seed must be at least 32 bytes")); }
+
+    // Perform the same BIP-44 derivation as your main function
+    let master_sk = ExtendedSpendingKey::master(&seed_bytes);
+    let purpose_key = master_sk.derive_child(ChildIndex::hardened(32));
+    let coin_type_key = purpose_key.derive_child(ChildIndex::hardened(133));
+    let account_sk = coin_type_key.derive_child(ChildIndex::hardened(hd_index));
+    
+    // Serialize the derived key to bytes
+    let mut sk_bytes = vec![];
+    account_sk.write(&mut sk_bytes).map_err(|e| e.to_string())?;
+    
+    // Return the hex-encoded spending key
+    Ok(hex::encode(sk_bytes))
+}
+
 #[wasm_bindgen]
 pub fn encrypt_message(
     address_string: String,

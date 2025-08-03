@@ -18,7 +18,7 @@
     {
       "resources": [
         "inject.js",
-        "zcash_web_crypto_lib_bg.wasm"
+        "veruszsupport_bg.wasm"
       ],
       "matches": ["<all_urls>"]
     }
