@@ -143,6 +143,9 @@ struct RpcParams {
     from_id: String,
     #[serde(rename = "toId")]
     to_id: String,
+    #[serde(default)]
+    #[serde(rename = "returnSecret")]
+    return_secret: bool,
 }
 
 // The `#[derive(Serialize)]` attribute automatically generates code
@@ -151,6 +154,8 @@ struct RpcParams {
 struct ChannelKeys {
     address: String,
     fvk: String,
+     #[serde(rename = "spendingKey", skip_serializing_if = "Option::is_none")]
+    spending_key: Option<String>
 }
 
 // struct for the encrypted payload
@@ -159,8 +164,6 @@ struct EncryptedPayload {
     #[serde(rename = "ephemeralPublicKey")]
     ephemeral_public_key: String,
     ciphertext: String,
-
-    // adding optional parameter
     #[serde(rename = "symmetricKey", skip_serializing_if = "Option::is_none")]
     symmetric_key: Option<String>,
 }
@@ -235,6 +238,13 @@ pub fn z_getencryptionaddress(params: JsValue) -> Result<JsValue, JsValue> {
     let channel_keys = ChannelKeys {
         address: addr.encode(&network),
         fvk: hex::encode(dfvk.to_bytes()),
+        spending_key: if params.return_secret {
+            let mut sk_bytes = vec![];
+            final_sk.write(&mut sk_bytes).map_err(|e| e.to_string())?;
+            Some(hex::encode(sk_bytes))
+        } else {
+            None
+        },
     };
 
     //back to js deserialized

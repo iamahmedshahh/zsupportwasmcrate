@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { Buffer } from 'buffer';
+(window as any).Buffer = Buffer;
 
 interface RpcParams {
   seed?: string;
@@ -8,7 +10,9 @@ interface RpcParams {
   encryptionIndex?: number;
   fromId: string;
   toId: string;
+  returnSecret?: boolean;
 }
+
 interface DecryptParams {
   fvkHex?: string;
   ephemeralPublicKeyHex?: string;
@@ -17,9 +21,10 @@ interface DecryptParams {
 }
 interface VerusCryptoAPI {
   generateSpendingKey: (seedHex: string, hdIndex: number) => string;
-  zGetEncryptionAddress: (params: RpcParams) => { address: string, fvk: string };
+  zGetEncryptionAddress: (params: RpcParams) => { address: string, fvk: string, spendingKey?: string };
   encryptMessage: (address: string, message: string, returnSsk: boolean) => { ephemeralPublicKey: string, ciphertext: string, symmetricKey?: string };
   decryptMessage: (params: DecryptParams) => string;
+  convertIDtoHex: (idName: string) => string;
 }
 
 const isApiReady = ref(false);
@@ -30,11 +35,12 @@ const testResults = ref<Record<string, any> | null>(null);
 const inputMode = ref('seed'); // 'seed' or 'spendingKey'
 const seedHex = ref(''.padStart(64, 'a'));
 const spendingKeyHex = ref('');
-const fromIdHex = ref('616c69636540'); // "alice@" in hex
-const toIdHex = ref('626f6240');     // "bob@" in hex
+const fromIdName = ref('Alice.vrsc@'); // "alice@" in hex
+const toIdName = ref('Bob.vrsc@');     // "bob@" in hex
 const messageToEncrypt = ref('This is a secret message!');
 const hdIndex = ref(0);
 const encryptionIndex = ref(0);
+const returnSecret = ref(false);
 
 onMounted(() => {
   const setupApi = () => {
@@ -66,23 +72,29 @@ async function runFullTest() {
   try {
     const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
 
+    // convert IDs to hex format
+    const fromIdHex = verusCrypto.convertIDtoHex(fromIdName.value);
+    const toIdHex = verusCrypto.convertIDtoHex(toIdName.value);
+
     // construct the parameter object based on the selected input mode
     let params: RpcParams;
     if (inputMode.value === 'seed') {
       params = {
         seed: seedHex.value,
-        fromId: fromIdHex.value,
-        toId: toIdHex.value,
+        fromId: fromIdHex,
+        toId: toIdHex,
         hdIndex: hdIndex.value,
         encryptionIndex: encryptionIndex.value,
+        returnSecret: returnSecret.value,
       };
     } else {
       if (!spendingKeyHex.value) throw new Error("Spending key is required for this mode.");
       params = {
         spendingKey: spendingKeyHex.value,
-        fromId: fromIdHex.value,
-        toId: toIdHex.value,
+        fromId: fromIdName.value,
+        toId: toIdName.value,
         encryptionIndex: encryptionIndex.value,
+        returnSecret: returnSecret.value,
       };
     }
 
@@ -110,14 +122,14 @@ async function runFullTest() {
       '--- Channel Setup ---': '',
       'Channel Address': channel.address,
       'Channel FVK': `${channel.fvk.substring(0, 40)}...`,
+      'Returned Spending Key': channel.spendingKey ? `${channel.spendingKey.substring(0, 40)}...` : 'Not Requested',
       '--- Encryption ---': '',
       'Original Message': messageToEncrypt.value,
       'Returned SSK': `${encryptedPayload.symmetricKey?.substring(0, 40) || 'Not Requested'}...`,
-      'Ciphertext': `${encryptedPayload.ciphertext.substring(0, 40)}...`,
       '--- Decryption ---': '',
       'Decrypted Message': decryptedMessage,
       '--- Verification ---': '',
-      'Success?': messagesMatch ? '✅ Yes, messages match!' : '❌ No, mismatch!',
+      'Success?': messagesMatch ? ' Yes, messages match!' : ' No, mismatch!',
     };
 
   } catch (e: any) {
@@ -133,7 +145,7 @@ async function runFullTest() {
   <div class="test-interface">
     <h2>Verus-Style End-to-End Encryption Test</h2>
     <div v-if="!isApiReady" class="status pending">Waiting for Verus Crypto API...</div>
-    <div v-else class="status ready">✅ API Ready</div>
+    <div v-else class="status ready">API Ready</div>
     
     <div class="input-mode">
       <label><input type="radio" v-model="inputMode" value="seed" /> Use Seed</label>
@@ -152,11 +164,11 @@ async function runFullTest() {
 
     <div>
       <label for="fromId">From ID (Hex):</label>
-      <input id="fromId" v-model="fromIdHex" />
+      <input id="fromId" v-model="fromIdName" />
     </div>
      <div>
       <label for="toId">To ID (Hex):</label>
-      <input id="toId" v-model="toIdHex" />
+      <input id="toId" v-model="toIdName" />
     </div>
     <div v-if="inputMode === 'seed'">
       <label for="hdIndex">HD Index:</label>
@@ -171,6 +183,12 @@ async function runFullTest() {
       <input id="message" v-model="messageToEncrypt" />
     </div>
 
+    <div class="input-mode">
+        <label>
+            <input type="checkbox" v-model="returnSecret" /> Return Private Spending Key
+        </label>
+    </div>
+
     <button @click="runFullTest" :disabled="!isApiReady || testInProgress">
       {{ testInProgress ? 'Running...' : 'Run Full Test' }}
     </button>
@@ -181,12 +199,11 @@ async function runFullTest() {
 </template>
 
 <style scoped>
-
 .test-interface { max-width: 600px; margin: 2em auto; padding: 1.5em; border: 1px solid #444; border-radius: 8px; }
 .status { margin-bottom: 1em; font-weight: bold; }
 .pending { color: #f0ad4e; }
 .ready { color: #5cb85c; }
-.input-mode { margin-bottom: 1em; }
+.input-mode { margin: 1em 0; }
 .input-mode label { margin-right: 1em; cursor: pointer; }
 input, textarea { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; background-color: #333; color: #eee; border: 1px solid #555; border-radius: 4px; font-family: monospace; }
 textarea { resize: vertical; }

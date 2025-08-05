@@ -9,10 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "buffer": "^6.0.3",
     "polyfill": "^0.1.0",
-    "veruszsupport": "file:veruszsupportweb/pkg",
-    "vue": "^3.5.17",
-    "zcash_web_crypto_lib": "file:veruszsupportweb/pkg"
+    "verus-typescript-primitives": "github:VerusCoin/verus-typescript-primitives",
+    "veruszsupport": "./veruszsupportweb/pkg",
+    "vite-plugin-node-polyfills": "^0.24.0",
+    "vue": "^3.5.17"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.329",
@@ -21,5 +23,6 @@
     "typescript": "~5.8.3",
     "vite": "^7.0.0",
     "vue-tsc": "^2.2.10"
-  }
+  },
+  "packageManager": "yarn@4.5.1+sha512.341db9396b6e289fecc30cd7ab3af65060e05ebff4b3b47547b278b9e67b08f485ecd8c79006b405446262142c7a38154445ef7f17c1d5d1de7d90bf9ce7054d"
 }

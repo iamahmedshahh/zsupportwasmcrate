@@ -1,9 +1,12 @@
+import { Buffer } from 'buffer';
 import init, {
   z_getencryptionaddress, 
   encrypt_message,
   decrypt_message,
   generate_spending_key
 } from 'veruszsupport';
+
+import { toIAddress, fromBase58Check } from 'verus-typescript-primitives';
 
 interface ZGetEncryptionAddressParams {
   seed?: string;
@@ -12,6 +15,7 @@ interface ZGetEncryptionAddressParams {
   encryptionIndex?: number;
   fromId: string;
   toId: string;
+  returnSecret?: boolean;
 }
 
 interface DecryptParams {
@@ -23,10 +27,22 @@ interface DecryptParams {
 
 async function initializeApi() {
   try {
+    (window as any).Buffer = Buffer;
     await init();
-
     const verusCryptoApi = {
       version: '4.0.0', 
+
+       /**
+       * @param {string} idName - The friendly name of the ID.
+       * @returns {{string}} A Hex encoded verusID understandable by the communication channel.
+       */
+      convertIDtoHex: (idName:string): string =>  {
+        // convert friendly names to iaddresses using the library
+        const fromIAddress = toIAddress(idName);
+
+        // decode the iaddresses into raw bytes, then convert to hex and return
+        return fromBase58Check(fromIAddress).hash.toString('hex');
+      },
 
       /**
        * Generates a hex-encoded Sapling extended spending key for a given account.
