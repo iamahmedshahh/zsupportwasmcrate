@@ -3,13 +3,14 @@ import { ref, onMounted } from 'vue';
 import { Buffer } from 'buffer';
 (window as any).Buffer = Buffer;
 
+// Interfaces remain the same, but ensure RpcParams has optional IDs
 interface RpcParams {
   seed?: string;
   spendingKey?: string;
   hdIndex?: number;
   encryptionIndex?: number;
-  fromId: string;
-  toId: string;
+  fromId?: string;
+  toId?: string;
   returnSecret?: boolean;
 }
 
@@ -32,15 +33,18 @@ const testInProgress = ref(false);
 const testError = ref('');
 const testResults = ref<Record<string, any> | null>(null);
 
-const inputMode = ref('seed'); // 'seed' or 'spendingKey'
+const inputMode = ref('seed');
 const seedHex = ref(''.padStart(64, 'a'));
 const spendingKeyHex = ref('');
-const fromIdName = ref('Alice.vrsc@'); // "alice@" in hex
-const toIdName = ref('Bob.vrsc@');     // "bob@" in hex
+const fromIdName = ref('Alice.vrsc@');
+const toIdName = ref('Bob.vrsc@');
 const messageToEncrypt = ref('This is a secret message!');
 const hdIndex = ref(0);
 const encryptionIndex = ref(0);
 const returnSecret = ref(false);
+
+const useFromId = ref(true);
+const useToId = ref(true);
 
 onMounted(() => {
   const setupApi = () => {
@@ -52,7 +56,6 @@ onMounted(() => {
   setupApi();
 });
 
-// function to pre-fill the spending key input for easy testing
 function generateAndSetSpendingKey() {
   if (!isApiReady.value) return;
   const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
@@ -72,11 +75,10 @@ async function runFullTest() {
   try {
     const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
 
-    // convert IDs to hex format
-    const fromIdHex = verusCrypto.convertIDtoHex(fromIdName.value);
-    const toIdHex = verusCrypto.convertIDtoHex(toIdName.value);
+    // NEW: Conditionally convert IDs to hex based on checkbox state
+    const fromIdHex = useFromId.value? verusCrypto.convertIDtoHex(fromIdName.value) : undefined;
+    const toIdHex = useToId.value? verusCrypto.convertIDtoHex(toIdName.value) : undefined;
 
-    // construct the parameter object based on the selected input mode
     let params: RpcParams;
     if (inputMode.value === 'seed') {
       params = {
@@ -91,45 +93,43 @@ async function runFullTest() {
       if (!spendingKeyHex.value) throw new Error("Spending key is required for this mode.");
       params = {
         spendingKey: spendingKeyHex.value,
-        fromId: fromIdName.value,
-        toId: toIdName.value,
+        fromId: fromIdHex,
+        toId: toIdHex,
         encryptionIndex: encryptionIndex.value,
         returnSecret: returnSecret.value,
       };
     }
 
-    // generate the channel keys
     const channel = verusCrypto.zGetEncryptionAddress(params);
 
-    // encrypt a message, requesting the SSK back
     const encryptedPayload = await verusCrypto.encryptMessage(
       channel.address,
       messageToEncrypt.value,
-      true // returnSsk = true
+      true
     );
 
-    // decrypt the message using the flexible object parameter
     const decryptedMessage = await verusCrypto.decryptMessage({
       fvkHex: channel.fvk,
       ephemeralPublicKeyHex: encryptedPayload.ephemeralPublicKey,
       ciphertextHex: encryptedPayload.ciphertext,
     });
     
-    // verify the result and display
     const messagesMatch = messageToEncrypt.value === decryptedMessage;
     testResults.value = {
       'Input Mode': inputMode.value,
       '--- Channel Setup ---': '',
+      'Using fromId': useFromId.value? fromIdName.value : 'No (null)',
+      'Using toId': useToId.value? toIdName.value : 'No (null)',
       'Channel Address': channel.address,
       'Channel FVK': `${channel.fvk.substring(0, 40)}...`,
-      'Returned Spending Key': channel.spendingKey ? `${channel.spendingKey.substring(0, 40)}...` : 'Not Requested',
+      'Returned Spending Key': channel.spendingKey? `${channel.spendingKey.substring(0, 40)}...` : 'Not Requested',
       '--- Encryption ---': '',
       'Original Message': messageToEncrypt.value,
       'Returned SSK': `${encryptedPayload.symmetricKey?.substring(0, 40) || 'Not Requested'}...`,
       '--- Decryption ---': '',
       'Decrypted Message': decryptedMessage,
       '--- Verification ---': '',
-      'Success?': messagesMatch ? ' Yes, messages match!' : ' No, mismatch!',
+      'Success?': messagesMatch? ' Yes, messages match!' : ' No, mismatch!',
     };
 
   } catch (e: any) {
@@ -162,12 +162,21 @@ async function runFullTest() {
       <button @click="generateAndSetSpendingKey" :disabled="!isApiReady">Generate from Seed Above</button>
     </div>
 
-    <div>
-      <label for="fromId">From ID (Hex):</label>
+    <div class="input-mode">
+        <label>
+            <input type="checkbox" v-model="useFromId" /> Include 'From ID'
+        </label>
+        <label>
+            <input type="checkbox" v-model="useToId" /> Include 'To ID'
+        </label>
+    </div>
+
+    <div v-if="useFromId">
+      <label for="fromId">From ID:</label>
       <input id="fromId" v-model="fromIdName" />
     </div>
-     <div>
-      <label for="toId">To ID (Hex):</label>
+     <div v-if="useToId">
+      <label for="toId">To ID:</label>
       <input id="toId" v-model="toIdName" />
     </div>
     <div v-if="inputMode === 'seed'">
@@ -190,7 +199,7 @@ async function runFullTest() {
     </div>
 
     <button @click="runFullTest" :disabled="!isApiReady || testInProgress">
-      {{ testInProgress ? 'Running...' : 'Run Full Test' }}
+      {{ testInProgress? 'Running...' : 'Run Full Test' }}
     </button>
     
     <div v-if="testError" class="error"><strong>Error:</strong><pre>{{ testError }}</pre></div>
@@ -199,6 +208,7 @@ async function runFullTest() {
 </template>
 
 <style scoped>
+/* Styles remain the same */
 .test-interface { max-width: 600px; margin: 2em auto; padding: 1.5em; border: 1px solid #444; border-radius: 8px; }
 .status { margin-bottom: 1em; font-weight: bold; }
 .pending { color: #f0ad4e; }
@@ -209,7 +219,7 @@ input, textarea { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-b
 textarea { resize: vertical; }
 button { padding: 10px 15px; margin-top: 5px; cursor: pointer; border-radius: 5px; border: 1px solid transparent; transition: background-color 0.2s; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
-.result, .error { margin-top: 1em; word-wrap: break-word; text-align: left; }
-.result pre, .error pre { background-color: #282c34; color: #abb2bf; padding: 10px; border-radius: 5px; white-space: pre-wrap; }
+.result,.error { margin-top: 1em; word-wrap: break-word; text-align: left; }
+.result pre,.error pre { background-color: #282c34; color: #abb2bf; padding: 10px; border-radius: 5px; white-space: pre-wrap; }
 .error pre { color: #ff5555; }
 </style>

@@ -139,10 +139,12 @@ struct RpcParams {
     #[serde(default)]
     #[serde(rename = "encryptionIndex")]
     encryption_index: u32,
+    #[serde(default)] 
     #[serde(rename = "fromId")]
-    from_id: String,
+    from_id: Option<String>,
+    #[serde(default)] 
     #[serde(rename = "toId")]
-    to_id: String,
+    to_id: Option<String>,
     #[serde(default)]
     #[serde(rename = "returnSecret")]
     return_secret: bool,
@@ -207,16 +209,27 @@ pub fn z_getencryptionaddress(params: JsValue) -> Result<JsValue, JsValue> {
         return Err(JsValue::from_str("Must provide 'seed' or 'spendingKey'"));
     };
     // decode id strings into bytes
-    let from_id_bytes = hex::decode(params.from_id).map_err(|e| e.to_string())?;
-    let to_id_bytes = hex::decode(params.to_id).map_err(|e| e.to_string())?;
-
-    // hash the derived base key with the fromid and toid using sha256
     let mut hasher = Sha256::default();
-    let mut base_sk_bytes = vec![];
+    let mut base_sk_bytes = Vec::new();
     base_sk.write(&mut base_sk_bytes).map_err(|e| e.to_string())?;
+    
+    // 1. Hash the base spending key first.
     hasher.update(&base_sk_bytes);
-    hasher.update(from_id_bytes);
-    hasher.update(to_id_bytes);
+
+    // 2. Handle the optional `from_id`.
+    if let Some(id_hex) = params.from_id {
+        let from_id_bytes = hex::decode(id_hex).map_err(|e| e.to_string())?;
+        hasher.update(from_id_bytes);
+    } else {
+        // If from_id is null/missing, hash a single zero byte, matching the C++ logic.
+        hasher.update([0u8]);
+    }
+
+    // 3. Handle the optional `to_id`.
+    if let Some(id_hex) = params.to_id {
+        let to_id_bytes = hex::decode(id_hex).map_err(|e| e.to_string())?;
+        hasher.update(to_id_bytes);
+    }
 
     // here is our unique, deterministic seed for the communication channel;
     let channel_seed: [u8; 32] = hasher.finalize().into();
