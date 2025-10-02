@@ -70,8 +70,8 @@ Finally, install the frontend dependencies and start the development server.
 
 ```bash
 # From your Vue project's root directory
-npm install
-npm run build
+yarn install
+yarn build
 ```
 
 ### **4. Test the extension browser:
@@ -85,7 +85,7 @@ Click on load unpacked and select the dist folder
 ### **6. Test the interaction with a web app?:
 
 ```bash
-npm run dev
+yarn dev
 ```
 
 Open the Url 
@@ -115,8 +115,8 @@ window.addEventListener('verusCryptoReady', () => {
   const verusCrypto = window.verusCrypto;
 
   try {
-    const fromIdHex = verusCrypto.convertIDtoHex("Alice.vrsc@");
-    const toIdHex = verusCrypto.convertIDtoHex("Bob.vrsc@");
+    const fromIdHex = "hex of to id";
+    const toIdHex = "hex of from id";
 
     const channel = verusCrypto.zGetEncryptionAddress({
       seed: ''.padStart(64, 'a'),
@@ -135,25 +135,6 @@ window.addEventListener('verusCryptoReady', () => {
 
 ### API Reference
 
-#### `convertIDtoHex`
-
-Converts a human-readable VerusID name into its raw hex representation. This is being done by Verus TypeScript Primitives Library
-
-- **Signature:**  
-  `convertIDtoHex(idName: string): string`
-
-- **Parameters:**  
-  - `idName` (`string`): The VerusID name (e.g., `"Alice.vrsc@"`).
-
-- **Returns:**  
-  - `string`: The hex-encoded i-address hash.
-
-- **Example:**
-  ```javascript
-  const aliceIdHex = window.verusCrypto.convertIDtoHex("Alice.vrsc@");
-  ```
-
----
 
 #### `generateSpendingKey`
 
@@ -182,7 +163,7 @@ Generates a Sapling extended spending key for a given account.
 Generates a unique, unlinkable Sapling address and its corresponding Full Viewing Key (FVK) for a specific communication channel.
 
 - **Signature:**  
-  `zGetEncryptionAddress(params: object): { address: string, fvk: string, spendingKey?: string }`
+  `zGetEncryptionAddress(params: object): { address: string, fvk: string, fvk_hex: string, dfvk_hex:string, ivk: string, spendingKey?: string }`
 
 - **Parameters:**  
   An object with the following properties:

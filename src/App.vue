@@ -3,7 +3,6 @@ import { ref, onMounted } from 'vue';
 import { Buffer } from 'buffer';
 (window as any).Buffer = Buffer;
 
-// Interfaces remain the same, but ensure RpcParams has optional IDs
 interface RpcParams {
   seed?: string;
   spendingKey?: string;
@@ -20,31 +19,35 @@ interface DecryptParams {
   ciphertextHex: string;
   symmetricKeyHex?: string;
 }
+
+interface ChannelKeys {
+  address: string;
+  fvk: string;
+  fvkHex: string;
+  dfvkHex: string; 
+  spendingKey?: string;
+  ivk?: string;
+}
+
 interface VerusCryptoAPI {
   generateSpendingKey: (seedHex: string, hdIndex: number) => string;
-  zGetEncryptionAddress: (params: RpcParams) => { address: string, fvk: string, spendingKey?: string };
+  zGetEncryptionAddress: (params: RpcParams) => ChannelKeys;
   encryptMessage: (address: string, message: string, returnSsk: boolean) => { ephemeralPublicKey: string, ciphertext: string, symmetricKey?: string };
   decryptMessage: (params: DecryptParams) => string;
-  convertIDtoHex: (idName: string) => string;
 }
 
 const isApiReady = ref(false);
 const testInProgress = ref(false);
-const testError = ref('');
+const testError = ref<{ title: string; message: string } | null>(null);
 const testResults = ref<Record<string, any> | null>(null);
 
 const inputMode = ref('seed');
 const seedHex = ref(''.padStart(64, 'a'));
-const spendingKeyHex = ref('');
-const fromIdName = ref('Alice.vrsc@');
-const toIdName = ref('Bob.vrsc@');
+const spendingKeyInput = ref(''); 
 const messageToEncrypt = ref('This is a secret message!');
 const hdIndex = ref(0);
 const encryptionIndex = ref(0);
 const returnSecret = ref(false);
-
-const useFromId = ref(true);
-const useToId = ref(true);
 
 onMounted(() => {
   const setupApi = () => {
@@ -59,57 +62,57 @@ onMounted(() => {
 function generateAndSetSpendingKey() {
   if (!isApiReady.value) return;
   const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
-  spendingKeyHex.value = verusCrypto.generateSpendingKey(seedHex.value, hdIndex.value);
+
+  alert('Generated HEX spending key. You must convert it to bech32 to use it in the test below.');
+  spendingKeyInput.value = verusCrypto.generateSpendingKey(seedHex.value, hdIndex.value);
 }
 
 async function runFullTest() {
   if (!isApiReady.value) {
-    testError.value = "API is not ready.";
+    testError.value = { title: "API Error", message: "API is not ready." };
     return;
   }
   
-  testError.value = '';
+  testError.value = null;
   testResults.value = null;
   testInProgress.value = true;
 
   try {
     const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
-
-    // NEW: Conditionally convert IDs to hex based on checkbox state
-    const fromIdHex = useFromId.value? verusCrypto.convertIDtoHex(fromIdName.value) : undefined;
-    const toIdHex = useToId.value? verusCrypto.convertIDtoHex(toIdName.value) : undefined;
+    let baseParams = {
+      encryptionIndex: encryptionIndex.value,
+      returnSecret: returnSecret.value,
+      fromId: '237cc65dbb032174f0133e2f450f9afb5645e715',
+      toId: 'ac57fe88ff9dbcc6562196fc6ba426d35d638366',
+    };
 
     let params: RpcParams;
+
     if (inputMode.value === 'seed') {
       params = {
+        ...baseParams,
         seed: seedHex.value,
-        fromId: fromIdHex,
-        toId: toIdHex,
         hdIndex: hdIndex.value,
-        encryptionIndex: encryptionIndex.value,
-        returnSecret: returnSecret.value,
       };
     } else {
-      if (!spendingKeyHex.value) throw new Error("Spending key is required for this mode.");
+      if (!spendingKeyInput.value) throw new Error("Spending key is required for this mode.");
       params = {
-        spendingKey: spendingKeyHex.value,
-        fromId: fromIdHex,
-        toId: toIdHex,
-        encryptionIndex: encryptionIndex.value,
-        returnSecret: returnSecret.value,
+        ...baseParams,
+        spendingKey: spendingKeyInput.value,
       };
     }
 
     const channel = verusCrypto.zGetEncryptionAddress(params);
 
-    const encryptedPayload = await verusCrypto.encryptMessage(
+    const encryptedPayload = verusCrypto.encryptMessage(
       channel.address,
       messageToEncrypt.value,
-      true
+      true // Requesting SSK for completeness, though not used in decryption test
     );
 
-    const decryptedMessage = await verusCrypto.decryptMessage({
-      fvkHex: channel.fvk,
+    // FIX: Use the correct key format for decryption (`channel.fvkHex`)
+    const decryptedMessage = verusCrypto.decryptMessage({
+      fvkHex: channel.dfvkHex, // <-- This was the critical bug
       ephemeralPublicKeyHex: encryptedPayload.ephemeralPublicKey,
       ciphertextHex: encryptedPayload.ciphertext,
     });
@@ -118,23 +121,21 @@ async function runFullTest() {
     testResults.value = {
       'Input Mode': inputMode.value,
       '--- Channel Setup ---': '',
-      'Using fromId': useFromId.value? fromIdName.value : 'No (null)',
-      'Using toId': useToId.value? toIdName.value : 'No (null)',
       'Channel Address': channel.address,
-      'Channel FVK': `${channel.fvk.substring(0, 40)}...`,
-      'Returned Spending Key': channel.spendingKey? `${channel.spendingKey.substring(0, 40)}...` : 'Not Requested',
-      '--- Encryption ---': '',
+      'Channel XFVK (Bech32)': `${channel.fvk.substring(0, 40)}...`,
+      'Channel DFVK (Hex)': `${channel.dfvkHex.substring(0, 40)}...`, 
+      'Returned IVK (Hex)': `${channel.ivk?.substring(0, 40)}...`,
+      'Returned Spending Key': channel.spendingKey ? `${channel.spendingKey.substring(0, 40)}...` : 'Not Requested',
+      '--- Encryption & Decryption ---': '',
       'Original Message': messageToEncrypt.value,
-      'Returned SSK': `${encryptedPayload.symmetricKey?.substring(0, 40) || 'Not Requested'}...`,
-      '--- Decryption ---': '',
       'Decrypted Message': decryptedMessage,
       '--- Verification ---': '',
-      'Success?': messagesMatch? ' Yes, messages match!' : ' No, mismatch!',
+      'Success?': messagesMatch ? '✅ Yes, messages match!' : '❌ No, mismatch!',
     };
 
   } catch (e: any) {
     console.error("Test failed:", e);
-    testError.value = e.message || 'An unknown error occurred.';
+    testError.value = { title: "Runtime Error", message: e.message || 'An unknown error occurred.' };
   } finally {
     testInProgress.value = false;
   }
@@ -157,28 +158,11 @@ async function runFullTest() {
       <input id="seed" v-model="seedHex" size="70" />
     </div>
     <div v-if="inputMode === 'spendingKey'">
-      <label for="spendingKey">Extended Spending Key (Hex):</label>
-      <textarea id="spendingKey" v-model="spendingKeyHex" rows="3"></textarea>
-      <button @click="generateAndSetSpendingKey" :disabled="!isApiReady">Generate from Seed Above</button>
+      <label for="spendingKey">Extended Spending Key (Bech32):</label>
+      <textarea id="spendingKey" v-model="spendingKeyInput" rows="3"></textarea>
+      <button @click="generateAndSetSpendingKey" :disabled="!isApiReady">Generate from Seed Above (Hex)</button>
     </div>
 
-    <div class="input-mode">
-        <label>
-            <input type="checkbox" v-model="useFromId" /> Include 'From ID'
-        </label>
-        <label>
-            <input type="checkbox" v-model="useToId" /> Include 'To ID'
-        </label>
-    </div>
-
-    <div v-if="useFromId">
-      <label for="fromId">From ID:</label>
-      <input id="fromId" v-model="fromIdName" />
-    </div>
-     <div v-if="useToId">
-      <label for="toId">To ID:</label>
-      <input id="toId" v-model="toIdName" />
-    </div>
     <div v-if="inputMode === 'seed'">
       <label for="hdIndex">HD Index:</label>
       <input id="hdIndex" type="number" v-model="hdIndex" />
@@ -202,13 +186,12 @@ async function runFullTest() {
       {{ testInProgress? 'Running...' : 'Run Full Test' }}
     </button>
     
-    <div v-if="testError" class="error"><strong>Error:</strong><pre>{{ testError }}</pre></div>
+    <div v-if="testError" class="error"><strong>Error:</strong><pre>{{ testError.title }}: {{ testError.message }}</pre></div>
     <div v-if="testResults" class="result"><strong>Test Results:</strong><pre>{{ JSON.stringify(testResults, null, 2) }}</pre></div>
   </div>
 </template>
 
 <style scoped>
-/* Styles remain the same */
 .test-interface { max-width: 600px; margin: 2em auto; padding: 1.5em; border: 1px solid #444; border-radius: 8px; }
 .status { margin-bottom: 1em; font-weight: bold; }
 .pending { color: #f0ad4e; }

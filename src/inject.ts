@@ -6,15 +6,14 @@ import init, {
   generate_spending_key
 } from 'veruszsupport';
 
-import { toIAddress, fromBase58Check } from 'verus-typescript-primitives';
 
 interface ZGetEncryptionAddressParams {
   seed?: string;
   spendingKey?: string;
   hdIndex?: number;
   encryptionIndex?: number;
-  fromId: string;
-  toId: string;
+  fromId?: string;
+  toId?: string;
   returnSecret?: boolean;
 }
 
@@ -32,18 +31,6 @@ async function initializeApi() {
     const verusCryptoApi = {
       version: '4.0.0', 
 
-       /**
-       * @param {string} idName - The friendly name of the ID.
-       * @returns {{string}} A Hex encoded verusID understandable by the communication channel.
-       */
-      convertIDtoHex: (idName:string): string =>  {
-        // convert friendly names to iaddresses using the library
-        const fromIAddress = toIAddress(idName);
-
-        // decode the iaddresses into raw bytes, then convert to hex and return
-        return fromBase58Check(fromIAddress).hash.toString('hex');
-      },
-
       /**
        * Generates a hex-encoded Sapling extended spending key for a given account.
        * @param {string} seedHex - The master seed for the wallet.
@@ -54,12 +41,11 @@ async function initializeApi() {
         return generate_spending_key(seedHex, hdIndex);
       },
       
-      /**
-       * Generates a unique, unlinkable Sapling address and its corresponding FVK.
-       * This is a flexible API that can derive from a seed or a spending key.
-       * @param {object} params - The parameters for key generation.
-       * @returns {{address: string, fvk: string}} An object containing the channel's Mainnet address and FVK.
-       */
+    /**
+     * ...
+     * @param {object} params - The parameters for key generation. `params.spendingKey` must be a bech32-encoded string.
+     * @returns {ChannelKeys} An object containing the address and various key formats.
+     */
       zGetEncryptionAddress: (params: ZGetEncryptionAddressParams) => {
         return z_getencryptionaddress(params);
       },
