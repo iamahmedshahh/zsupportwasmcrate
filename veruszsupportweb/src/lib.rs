@@ -17,12 +17,12 @@ use zcash_primitives::{
 use zcash_note_encryption::{Domain, EphemeralKeyBytes};
 use zcash_keys::address::Address;
 use blake2b_simd::{Hash as Blake2bHash};
-use chacha20poly1305::{AeadInPlace, KeyInit, ChaCha20Poly1305};
+use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
 use rand_core::{RngCore, CryptoRng};
 use hex;
 use bech32::{self, FromBase32,  ToBase32, Variant};
 use ripemd::Ripemd160;
-
+use bs58;
 
 // a dummy rng passed to satisfy a function parameter requirement.
 // the function's internal logic bypasses this rng because randomness is
@@ -210,20 +210,158 @@ struct DecryptParams {
     symmetric_key_hex: Option<String>,
 }
 
-/// helper to parse an ID string into a 20-byte hash160
-/// it smartly checks if the ID is already a 40-char hex string
-fn id_to_h160_bytes(id: &str) -> anyhow::Result<[u8; 20]> {
+const I_ADDR_VERSION: u8 = 102; // the version byte used for all verus i-addresses, indicating their type
+const VERUS_CHAIN_IADDR: &str = "i5w5MuNik5NtLcYmNzcvaoixooEebB6MGV"; // the base i-address for the native verus chain (vrsc)
+const NULL_I_ADDR: &str = "i5w5MuNik5NtLcYmNzcvaoixooEebB6MGV"; // the null address used as a placeholder
+const EMPTY_PARENT_HASH: [u8; 20] = [0u8; 20]; // 20 bytes of zero used as the hash for a null id
+
+// double sha256 function which is non-standard but required for verus
+fn sha256d_vec(data: &[u8]) -> [u8; 32] {
+    let h1 = Sha256::digest(data); // first sha256 hash
+    let h2 = Sha256::digest(&h1); // second sha256 hash applied to the result of the first
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&h2);
+    out // returns a 32-byte hash
+}
+
+// standard hash160: sha256 then ripemd160
+fn hash160_vec(data: &[u8]) -> [u8; 20] {
+    let sha = Sha256::digest(data); // computes sha256
+    let rip = Ripemd160::digest(&sha); // computes ripemd160 on the sha256 output
+    let mut out = [0u8; 20];
+    out.copy_from_slice(&rip);
+    out // returns a 20-byte hash
+}
+
+fn encode_verus_iaddr(hash: &[u8; 20]) -> String {
+    let mut payload = Vec::with_capacity(21);
+    payload.push(I_ADDR_VERSION);
+
+    // Reverse the hash to little-endian encoding for storage in i-address
+    let mut hash_le = *hash;
+    hash_le.reverse();
+    payload.extend_from_slice(&hash_le);
+
+    bs58::encode(payload).with_check().into_string()
+}
+// decodes a verus i-address from base58check format into its raw 20-byte hash160
+fn decode_verus_iaddr(addr: &str) -> Result<[u8; 20]> {
+    // attempts to decode the base58 string without automatically checking the checksum
+    let decoded_all = bs58::decode(addr)
+        .into_vec()
+        .map_err(|e| anyhow!("base58 decode failed: {:?}", e))?;
+
+    // an i-address must be 1 byte (version) + 20 bytes (hash) + 4 bytes (checksum) = 25 bytes
+    if decoded_all.len() != 25 {
+        return Err(anyhow!("decoded i-address has invalid length: expected 25, got {}", decoded_all.len()));
+    }
     
-    // iff caller provided 40 hex chars, treat as the h160 directly
-    if id.len() == 40 && id.chars().all(|c| c.is_ascii_hexdigit()) {
-        let b = hex::decode(id)?;
-        let arr: [u8; 20] = b.try_into().map_err(|_| anyhow::anyhow!("ID hex must be 20 bytes"))?;
+    // separates the 21-byte payload (version+hash) from the 4-byte checksum
+    let payload_len = 21;
+    let payload = &decoded_all[..payload_len];
+    let given_checksum = &decoded_all[payload_len..];
+
+    // computes the expected checksum by applying double sha256 to the payload
+    let hash1 = Sha256::digest(payload);
+    let hash2 = Sha256::digest(&hash1);
+    let expected_checksum = &hash2[0..4];
+
+    // verifies that the decoded checksum matches the expected checksum
+    if given_checksum != expected_checksum {
+        return Err(anyhow!("i-address checksum mismatch"));
+    }
+
+    // verifies the first byte is the correct i-address version (102)
+    let version = payload[0];
+    if version != I_ADDR_VERSION {
+        return Err(anyhow!("unexpected i-address version byte: {} (expected {})", version, I_ADDR_VERSION));
+    }
+
+    // extracts the final 20-byte hash160 (which starts at index 1)
+    let mut hash = [0u8; 20];
+    hash.copy_from_slice(&payload[1..21]);
+
+    hash.reverse(); // convert to little endian
+
+    Ok(hash)
+}
+
+
+// combines two byte buffers and applies the non-standard double sha256 hash (sha256d)
+fn hash_combined(buf1: &[u8], buf2: &[u8]) -> [u8; 32] {
+    // concatenates the two input buffers
+    let mut combined = Vec::with_capacity(buf1.len() + buf2.len());
+    combined.extend_from_slice(buf1);
+    combined.extend_from_slice(buf2);
+    sha256d_vec(&combined) // returns the double sha256 hash of the concatenated data
+}
+
+// converts a verus id name (like 'alice@') into its deterministic 20-byte hash160
+pub fn verusid_to_h160(verusid: &str) -> Result<[u8; 20]> {
+    // input validation: ensures the name ends with '@'
+    if !verusid.ends_with('@') {
+        return Err(anyhow!("Invalid VerusID: must end with '@'"));
+    }
+
+    let trimmed = verusid.trim_end_matches('@'); // removes the trailing '@'
+    if trimmed.is_empty() {
+        return Err(anyhow!("Invalid VerusID: empty name before @"));
+    }
+
+    let name_lower = trimmed.to_ascii_lowercase(); // converts the id name to lowercase (c-locale)
+    let name_buffer = name_lower.as_bytes();
+    
+    // gets the parent chain's hash (the verus chain i-address decoded)
+    let mut parent_hash = decode_verus_iaddr(VERUS_CHAIN_IADDR)?;
+    parent_hash.reverse();
+
+    
+    // calculates the hash of the individual name component using double sha256
+    let name_hash = sha256d_vec(name_buffer); 
+    
+    // calculates the combined hash: hash(parent_hash | name_hash)
+    let id_hash = hash_combined(&parent_hash, &name_hash);
+    
+    // final step: computes hash160 on the combined id_hash
+    let mut result = hash160_vec(&id_hash);
+    
+    // reverses the final hash to little-endian, matching the daemon's internal storage format
+    result.reverse();
+    
+    Ok(result) // this is the final, little-endian hash160 destination hash
+}
+
+// the main dispatcher for all input types
+pub fn id_to_h160_bytes(id: &str) -> Result<[u8; 20]> {
+    let trimmed = id.trim();
+
+    // handles raw 40-character hex strings (already resolved hash160)
+    if trimmed.len() == 40 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+        let decoded = hex::decode(trimmed)?;
+        let arr: [u8; 20] = decoded.try_into()
+            .map_err(|_| anyhow!("Invalid length for hex ID"))?;
         return Ok(arr);
     }
-    // otherwise compute hash160 = RIPEMD160(SHA256(id_bytes))
-    let sha = Sha256::digest(id.as_bytes());
-    let rip = Ripemd160::digest(&sha);
-    Ok(rip.into())
+
+    // handles i-address strings
+    if trimmed.starts_with('i') {
+        // delegates to the complex base58check decoding function
+        return decode_verus_iaddr(trimmed);
+    }
+
+    // handles empty string or explicit null address constant
+    if trimmed.is_empty() || trimmed == NULL_I_ADDR {
+        return Ok(EMPTY_PARENT_HASH); // returns the 20-byte zero hash
+    }
+
+    // handles verus id names (must end with '@')
+    if trimmed.ends_with('@') {
+        // delegates to the recursive hashing logic
+        return verusid_to_h160(trimmed);
+    }
+
+    // fallback error for invalid input format
+    Err(anyhow!("Invalid ID format: must be hex, i-address, or VerusID ending with '@'"))
 }
 
 
@@ -345,7 +483,7 @@ pub fn generate_spending_key(seed_hex: String, hd_index: u32) -> Result<String, 
     let seed_bytes = hex::decode(seed_hex).map_err(|e| e.to_string())?;
     if seed_bytes.len() < 32 { return Err(JsValue::from_str("Seed must be at least 32 bytes")); }
 
-    // perform the same BIP-44 derivation as your main function
+    // perform the same BIP-44 derivation as the main function
     let master_sk = ExtendedSpendingKey::master(&seed_bytes);
     let purpose_key = master_sk.derive_child(ChildIndex::hardened(32));
     let coin_type_key = purpose_key.derive_child(ChildIndex::hardened(133));
@@ -356,7 +494,8 @@ pub fn generate_spending_key(seed_hex: String, hd_index: u32) -> Result<String, 
     account_sk.write(&mut sk_bytes).map_err(|e| e.to_string())?;
     
     // return the hex-encoded spending key
-    Ok(hex::encode(sk_bytes))
+    key_encoding::encode_sk(&account_sk)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen]
@@ -446,6 +585,104 @@ pub fn decrypt_message(params: JsValue) -> Result<String, JsValue> {
 }
 
 
-// The z_getencryptionaddress function is now untestable with cargo test 
-// because its signature used the JsValue type
-// JsValue is a special type that only exists in a WebAssembly environment where JS is active. 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // NOTE: This is the correct, consistent hash value from your passing tests.
+    const ALICE_EXPECTED_H160_LE: &str = "237cc65dbb032174f0133e2f450f9afb5645e715";
+    const ALICE_IADDR: &str = "i5ULg5wze6A1uWGiXSoLjc9KBF1Ea6ZuGd"; // The i-address calculated from the H160 above
+
+    #[test]
+    fn test_1_verusid_name_to_hash() {
+        
+        let input_name = "alice@";
+        
+        // Raw Verus ID string.
+        println!("Input: Verus ID Name: '{}'", input_name);
+        
+        //   GENERATE: Calculates the H160 by performing recursive double-SHA256 (SHA256D) 
+        //    hashing against the base chain ID (VERUS_CHAIN_IADDR).
+        let hash_result = verusid_to_h160(input_name).expect("Failed to hash Verus ID name");
+        let hash_hex = hex::encode(hash_result);
+
+        // The final standardized hash160 (Little-Endian).
+        println!("Generated Hash (LE): {}", hash_hex);
+        
+        // Assertion confirms the Rust hashing logic is correct for this name.
+        assert_eq!(hash_hex, ALICE_EXPECTED_H160_LE);
+        
+        // Show the output of the function used internally for the parent hash lookup
+        let parent_hash = decode_verus_iaddr(VERUS_CHAIN_IADDR).expect("Failed to decode parent hash");
+        println!("Internal Parent Hash (VERUS_CHAIN_IADDR): {}", hex::encode(parent_hash));
+    }
+
+    #[test]
+    fn test_2_iaddress_decode_to_hash() {
+        // i-Address Decode Conversion (decode_verus_iaddr) ---
+        
+        let input_iaddr = ALICE_IADDR;
+        
+        //  The Base58Check-encoded i-address string.
+        println!("Input: i-Address: '{}'", input_iaddr);
+        
+        // GENERATE: Performs Base58Check decoding, verifies the checksum, and extracts 
+        //    the raw 20-byte payload (the H160).
+        let hash_result = decode_verus_iaddr(input_iaddr).expect("Failed to decode i-address");
+        let hash_hex = hex::encode(hash_result);
+
+        // The final standardized hash160 (Little-Endian).
+        println!("Decoded Hash (LE): {}", hash_hex);
+        
+        // Assertion confirms the i-address decode logic produces the identical hash.
+        assert_eq!(hash_hex, ALICE_EXPECTED_H160_LE);
+        
+        // Show the encoding function's output to demonstrate the roundtrip capability.
+        let encoded_iaddr = encode_verus_iaddr(&hash_result);
+        println!("Check: Re-encoded i-Address: {}", encoded_iaddr);
+        assert_eq!(encoded_iaddr, input_iaddr);
+    }
+    // This test will print the 40-character LITTLE-ENDIAN hash.
+    #[test]
+    fn output_format_test() {
+        let iaddr = "i6iAZJPTEHcH1ctBHXwEHKoN3utwr9nReH";
+        let h160_le = id_to_h160_bytes(iaddr).expect("decode failed");
+        
+        // The output string will be the LITTLE-ENDIAN representation of the hash.
+        println!("i-Address Output H160: {}", hex::encode(h160_le)); 
+    }
+
+        #[test]
+    fn test_z_getencryptionaddress_core_golden_value() {
+
+        let seed_hex = "a".repeat(64);
+        let from_id = "alice@";
+        let to_id = "bob@";
+
+        // Expected Golden Outputs from Daemon Console ---
+        const GOLDEN_ADDRESS: &str = "zs120e9xq89awhmvscegn9ezst7x9vt7asanwav2vaxwmlhum23peqjsrqnr6mx2lg7hmfmgy9psdy";
+        const GOLDEN_IVK: &str = "ecac41f3aae79cfd212d241c2f690787234f60fd1bd9622b5321367f92502707";
+        
+        println!("\n=== Running Golden Value Test ===");
+
+        let channel_keys = z_getencryptionaddress_core(RpcParams {
+            seed: Some(seed_hex),
+            spending_key: None,
+            hd_index: 0,
+            encryption_index: 0,
+            from_id: Some(from_id.to_string()),
+            to_id: Some(to_id.to_string()),
+            return_secret: true,
+        }).expect("Failed to generate channel keys");
+
+        println!("Actual Address: {}", channel_keys.address);
+        println!("Expected Address: {}", GOLDEN_ADDRESS);
+        println!("Actual IVK: {}", channel_keys.ivk.as_ref().unwrap());
+
+        // Assert the final derived address matches the daemon's output
+        assert_eq!(channel_keys.address, GOLDEN_ADDRESS, "Final derived address mismatch.");
+        
+        //Assert the derived Incoming Viewing Key (IVK) matches the daemon's output
+        assert_eq!(channel_keys.ivk.unwrap(), GOLDEN_IVK, "Derived IVK mismatch.");
+    }
+}

@@ -48,6 +48,9 @@ const messageToEncrypt = ref('This is a secret message!');
 const hdIndex = ref(0);
 const encryptionIndex = ref(0);
 const returnSecret = ref(false);
+const fromIdString = ref('alice@'); 
+const toIdString = ref('bob@'); 
+
 
 onMounted(() => {
   const setupApi = () => {
@@ -79,11 +82,13 @@ async function runFullTest() {
 
   try {
     const verusCrypto = (window as any).verusCrypto as VerusCryptoAPI;
+
     let baseParams = {
       encryptionIndex: encryptionIndex.value,
       returnSecret: returnSecret.value,
-      fromId: '237cc65dbb032174f0133e2f450f9afb5645e715',
-      toId: 'ac57fe88ff9dbcc6562196fc6ba426d35d638366',
+
+      fromId: fromIdString.value, 
+      toId: toIdString.value,
     };
 
     let params: RpcParams;
@@ -107,12 +112,11 @@ async function runFullTest() {
     const encryptedPayload = verusCrypto.encryptMessage(
       channel.address,
       messageToEncrypt.value,
-      true // Requesting SSK for completeness, though not used in decryption test
+      true 
     );
 
-    // FIX: Use the correct key format for decryption (`channel.fvkHex`)
     const decryptedMessage = verusCrypto.decryptMessage({
-      fvkHex: channel.dfvkHex, // <-- This was the critical bug
+      fvkHex: channel.dfvkHex, 
       ephemeralPublicKeyHex: encryptedPayload.ephemeralPublicKey,
       ciphertextHex: encryptedPayload.ciphertext,
     });
@@ -174,6 +178,15 @@ async function runFullTest() {
     <div>
       <label for="message">Message to Encrypt:</label>
       <input id="message" v-model="messageToEncrypt" />
+    </div>
+    
+    <div>
+        <label for="fromIdString">From ID (Name or i-Address):</label>
+        <input id="fromIdString" v-model="fromIdString" />
+    </div>
+    <div>
+        <label for="toIdString">To ID (Name or i-Address):</label>
+        <input id="toIdString" v-model="toIdString" />
     </div>
 
     <div class="input-mode">
