@@ -32,6 +32,7 @@ bech32 = "0.9"
 group = "0.13.0"
 bs58 = "0.5.1"
 
+
 # Zcash dependencies using direct git forks to ensure correct code is used.
 # This avoids the issues with the [patch] section and ensures synchronized forks.
 zcash_primitives = { git = "https://github.com/who-biz/librustzcash", branch = "ka_agree", default-features = false }
