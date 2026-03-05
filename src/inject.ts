@@ -1,83 +1,113 @@
 import { Buffer } from 'buffer';
-import init, {
-  z_getencryptionaddress, 
-  encrypt_message,
-  decrypt_message,
-  generate_spending_key
-} from 'veruszsupport';
+import init, { z_get_encryptionaddress, encrypt_v_data, decrypt_v_data } from 'veruszsupport';
 
+// ── Types — all bytes, no strings ──────────────────────────────
 
-interface ZGetEncryptionAddressParams {
-  seed?: string;
-  spendingKey?: string;
-  hdIndex?: number;
+interface DerivationKeys {
+  seed?:            Buffer;
+  spendingKey?:     Buffer;
+  hdIndex?:         number;
   encryptionIndex?: number;
-  fromId?: string;
-  toId?: string;
-  returnSecret?: boolean;
+  fromId?:          Buffer;  // caller should resolve them  toiAddress if needed, it should be acceptable as a buffer as a buffer 
+  toId?:            Buffer;  
+  returnSecret?:    boolean;
+}
+
+interface ChannelKeys {
+  address:Buffer;        // caller can resolve to SaplingPaymentAddress.frombuffer and then toString if needed anywhere
+  ivk:Buffer;        
+  extfvk:Buffer;        
+  spendingKey?: Buffer | null;
+}
+
+interface EncryptParams {
+  address: Buffer;  
+  data_to_encrypt: Buffer;
+  returnSsk?: boolean;
+}
+
+interface EncryptedPayload {
+  ephemeralPublicKey: Buffer;  
+  encrypted_data: Buffer;
+  symmetricKey?: Buffer | null;
 }
 
 interface DecryptParams {
-  fvkHex?: string;
-  ephemeralPublicKeyHex?: string;
-  ciphertextHex: string;
-  symmetricKeyHex?: string;
+  ivk?: Buffer;  
+  epk?: Buffer;  
+  data_to_decrypt: Buffer;
+  ssk?: Uint8Array;
 }
+
 
 async function initializeApi() {
   try {
     (window as any).Buffer = Buffer;
     await init();
+
     const verusCryptoApi = {
-      version: '4.0.0', 
+      version: '5.0.0',
 
       /**
-       * Generates a hex-encoded Sapling extended spending key for a given account.
-       * @param {string} seedHex - The master seed for the wallet.
-       * @param {number} hdIndex - The account index to derive.
-       * @returns {string} The hex-encoded extended spending key.
+       * Derives channel keys.
        */
-      generateSpendingKey: (seedHex: string, hdIndex: number): string => {
-        return generate_spending_key(seedHex, hdIndex);
-      },
-      
-    /**
-     * ...
-     * @param {object} params - The parameters for key generation. `params.spendingKey` must be a bech32-encoded string.
-     * @returns {ChannelKeys} An object containing the address and various key formats.
-     */
-      zGetEncryptionAddress: (params: ZGetEncryptionAddressParams) => {
-        return z_getencryptionaddress(params);
-      },
+      zGetEncryptionAddress: (params: DerivationKeys): ChannelKeys => {
+        const result = z_get_encryptionaddress(
+          params.seed            ?? null,
+          params.spendingKey     ?? null,
+          params.hdIndex         ?? null,
+          params.encryptionIndex ?? null,
+          params.fromId          ?? null,
+          params.toId            ?? null,
+          params.returnSecret    ?? false
+        );
 
-      /**
-       * Encrypts a message for a given Sapling address.
-       * @param {string} address - The recipient's Sapling address.
-       * @param {string} message - The plaintext message to encrypt.
-       * @param {boolean} returnSsk - If true, the final symmetric key will be returned.
-       * @returns {{ephemeralPublicKey: string, ciphertext: string, symmetricKey?: string}}
-       */
-      encryptMessage: (address: string, message: string, returnSsk: boolean) => {
-        return encrypt_message(address, message, returnSsk);
+        return {
+          address:    Buffer.from(result.address),              
+          ivk:        Buffer.from(result.ivk),             
+          extfvk:     Buffer.from(result.extfvk),          
+          spendingKey: result.spendingKey
+            ? Buffer.from(result.spendingKey) : null,      
+        };
       },
 
       /**
-       * Decrypts a message using either an FVK or a direct symmetric key.
-       * @param {DecryptParams} params - The parameters for decryption.
-       * @returns {string} The original plaintext message.
+       * Encrypts data bytes
        */
-      decryptMessage: (params: DecryptParams): string => {
-        return decrypt_message(params);
+      encryptData: (params: EncryptParams): EncryptedPayload => {
+
+        const result = encrypt_v_data(
+          params.address,
+          params.data_to_encrypt,
+          params.returnSsk ?? false
+        );
+
+        return {
+          ephemeralPublicKey: Buffer.from(result.ephemeralPublicKey),
+          encrypted_data:     Buffer.from(result.encryptedData),
+          symmetricKey: result.symmetricKey
+            ? Buffer.from(result.symmetricKey) : null,
+        };
+      },
+
+      /**
+       * Decrypts encrypted data
+       */
+      decryptData: (params: DecryptParams): Buffer => {
+        return Buffer.from(decrypt_v_data(
+          params.ivk  ?? null,
+          params.epk  ?? null,
+          params.data_to_decrypt,
+          params.ssk  ?? null,
+        ));
       },
     };
 
-
     (window as any).verusCrypto = verusCryptoApi;
     window.dispatchEvent(new CustomEvent('verusCryptoReady'));
-    console.log('Verus Crypto API Injected and ready.');
 
   } catch (e) {
-    console.error(' Error injecting Verus Crypto API:', e);
+    console.error('Error injecting Verus Crypto API:', e);
   }
 }
 
