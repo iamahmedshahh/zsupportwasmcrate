@@ -1,20 +1,19 @@
 import { Buffer } from 'buffer';
 import init, { z_get_encryptionaddress, encrypt_v_data, decrypt_v_data } from 'veruszsupport';
-
-// ── Types — all bytes, no strings ──────────────────────────────
+import { bech32 } from 'bech32';
 
 interface DerivationKeys {
   seed?:            Buffer;
-  spendingKey?:     Buffer;
+  spendingKey?:     string;
   hdIndex?:         number;
   encryptionIndex?: number;
-  fromId?:          Buffer;  // caller should resolve them  toiAddress if needed, it should be acceptable as a buffer as a buffer 
+  fromId?:          Buffer;  
   toId?:            Buffer;  
   returnSecret?:    boolean;
 }
 
 interface ChannelKeys {
-  address:Buffer;        // caller can resolve to SaplingPaymentAddress.frombuffer and then toString if needed anywhere
+  address:Buffer;        
   ivk:Buffer;        
   extfvk:Buffer;        
   spendingKey?: Buffer | null;
@@ -36,7 +35,7 @@ interface DecryptParams {
   ivk?: Buffer;  
   epk?: Buffer;  
   data_to_decrypt: Buffer;
-  ssk?: Uint8Array;
+  ssk?: Buffer;
 }
 
 
@@ -52,9 +51,14 @@ async function initializeApi() {
        * Derives channel keys.
        */
       zGetEncryptionAddress: (params: DerivationKeys): ChannelKeys => {
+
+      const spendingKeyBytes = params.spendingKey
+        ? Buffer.from(bech32.fromWords(bech32.decode(params.spendingKey, 1000).words))
+        : null;
+
         const result = z_get_encryptionaddress(
           params.seed            ?? null,
-          params.spendingKey     ?? null,
+          spendingKeyBytes     ?? null,
           params.hdIndex         ?? null,
           params.encryptionIndex ?? null,
           params.fromId          ?? null,
@@ -63,7 +67,7 @@ async function initializeApi() {
         );
 
         return {
-          address:    Buffer.from(result.address),              
+          address: Buffer.from(result.address),              
           ivk:        Buffer.from(result.ivk),             
           extfvk:     Buffer.from(result.extfvk),          
           spendingKey: result.spendingKey
@@ -75,7 +79,6 @@ async function initializeApi() {
        * Encrypts data bytes
        */
       encryptData: (params: EncryptParams): EncryptedPayload => {
-
         const result = encrypt_v_data(
           params.address,
           params.data_to_encrypt,
