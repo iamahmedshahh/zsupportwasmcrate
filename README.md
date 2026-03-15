@@ -1,5 +1,7 @@
 ## Verus Encrypted Channel Key Derivation, Encryption and Decryption Extension
 
+## Most Awesome Encryption Tool Ever on the Web
+
 This extension provides functions, written in Rust and compiled to WebAssembly (WASM), for use in a modern web applications.
 
 The core Rust crate, `veruszsupport`, handles Zcash Sapling key generation and symmetric key derivation, exposed via Chrome extension that injects a global API into web pages. 
