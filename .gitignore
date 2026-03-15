@@ -13,7 +13,9 @@ dist-ssr
 *.local
 /veruszsupportweb/pkg
 /veruszsupportweb/target
-src/App.vue
+.yarn
+.vscode
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

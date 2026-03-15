@@ -67,21 +67,7 @@ Enable Developer Mode
 Click "Load unpacked" and select the dist folder
 ```
 
-### 5. Run the Test Web App
-```bash
-yarn dev
-```
-
-Open the URL shown in terminal (e.g. `http://localhost:5173/`).
-
-### 6. Run the verusd RPC Proxy
-
-The test web app cannot call verusd directly due to CORS. A proxy server is required.
-```bash
-npx tsx proxy.ts
-```
-
-This starts a proxy on `http://localhost:27487` that forwards all RPC calls to verusd on port `27486`. Set the port to `27487` in the App.vue RPC config panel.
+### refer to end of the readme for usage and seeing it in action, example usage explained via exposed API sections
 
 ---
 
@@ -106,7 +92,7 @@ Derives a deterministic Sapling z-address and associated keys for an encrypted c
 ```typescript
 zGetEncryptionAddress(params: {
   seed?:            Buffer;   // master seed bytes — provide seed OR spendingKey
-  spendingKey?:     string;   // bech32 "secret-extended-key-main1..." 
+  spendingKey?:     Buffer;   // Buffer of "secret-extended-key-main1..." spendingkey
   hdIndex?:         number;   // HD account index (default: 0, seed mode only)
   encryptionIndex?: number;   // channel sub-index (default: 0)
   fromId?:          Buffer;   // sender VerusID as raw hash160 bytes
@@ -209,9 +195,17 @@ console.log('Decrypted:', plaintext.toString());
 
 ---
 
-## Test Web App (App.vue)
+## Test Web App (RequestGenerator.vue)
 
-The test web app at `http://localhost:5173/` derives channel keys by calling the extension which are then used to generate a signed `AppEncryptionRequest` as a QR code and deeplink that can be scanned by Verus Mobile
+Conversions to Strings are kept as little as possible and the extension level buffers and in rust layer zeroized types are used.
+
+The test web app uses functions from `Verus-typescript-primitives` such as `SaplingPaymentAddress` to convert the binary data back to readable standardized format.
+
+
+ Runs at `http://localhost:5173/` derives channel keys by calling the extension which are then used to generate a signed `AppEncryptionRequest` as a QR code and deeplink that can be scanned by Verus Mobile
+
+
+ Please have a running `Verus` daemon see `https://github.com/VerusCoin/VerusCoin` if not setup
 
 ### How it works
 
@@ -239,6 +233,8 @@ yarn dev
 yarn build
 # Load dist/ as unpacked extension in chrome://extensions/
 ```
+
+This starts a proxy on `http://localhost:27487` that forwards all RPC calls to verusd on port `27486`. Set the port to `27487` in the App.vue RPC config panel.
 
 Then open `http://localhost:5173/`, fill in the Signing Identity field with a VerusID loaded in your verusd wallet, and click **Derive → Build → Sign → QR**. Scan the QR with Verus Mobile.
 
