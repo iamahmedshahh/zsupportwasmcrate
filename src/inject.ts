@@ -1,10 +1,9 @@
 import { Buffer } from 'buffer';
 import init, { z_get_encryptionaddress, encrypt_v_data, decrypt_v_data } from 'veruszsupport';
-import { bech32 } from 'bech32';
 
 interface DerivationKeys {
   seed?:            Buffer;
-  spendingKey?:     string;
+  spendingKey?:     Buffer;
   hdIndex?:         number;
   encryptionIndex?: number;
   fromId?:          Buffer;  
@@ -52,13 +51,9 @@ async function initializeApi() {
        */
       zGetEncryptionAddress: (params: DerivationKeys): ChannelKeys => {
 
-      const spendingKeyBytes = params.spendingKey
-        ? Buffer.from(bech32.fromWords(bech32.decode(params.spendingKey, 1000).words))
-        : null;
-
         const result = z_get_encryptionaddress(
           params.seed            ?? null,
-          spendingKeyBytes     ?? null,
+          params.spendingKey     ?? null,
           params.hdIndex         ?? null,
           params.encryptionIndex ?? null,
           params.fromId          ?? null,
