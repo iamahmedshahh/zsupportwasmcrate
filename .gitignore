@@ -13,6 +13,8 @@ dist-ssr
 *.local
 /veruszsupportweb/pkg
 /veruszsupportweb/target
+.yarn
+.vscode
 
 # Editor directories and files
 .vscode/*
