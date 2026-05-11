@@ -1,23 +1,17 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
-  plugins: [
-    vue(),
-    nodePolyfills()],
-   build: {
-    outDir: 'dist',
-    rollupOptions: {
-      input: {
-        content: 'src/content.ts',
-        inject: 'src/inject.ts',
-      },
-      output: {
-        entryFileNames: `[name].js`,
-        assetFileNames: `[name].[ext]`,
-        chunkFileNames: `[name].js`,
-      },
+  build: {
+    lib: {
+      entry: resolve(__dirname, 'src/index.ts'),
+      name: 'VerusZSupport',
+      fileName: 'index',
+      formats: ['es']
     },
-  },
-})
+    rollupOptions: {
+      external: [],
+    },
+    copyPublicDir: false,
+  }
+});
