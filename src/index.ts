@@ -1,54 +1,58 @@
-import init, {
+import {
   z_get_encryptionaddress,
   encrypt_v_data,
   decrypt_v_data,
 } from 'veruszsupport';
 
-// Kicks off the moment the library is imported.
-
-const wasmReady = init();
-
 
 export interface DerivationParams {
-  seed?:            Uint8Array;   // variable length
-  spendingKey?:     Uint8Array;   // 169 bytes
+  seed?:            Uint8Array;   
+  spendingKey?:     Uint8Array;   
   hdIndex?:         number;
   encryptionIndex?: number;
-  fromId?:          Uint8Array;   // 20 bytes (hash160)
-  toId?:            Uint8Array;   // 20 bytes (hash160)
+  fromId?:          Uint8Array;   
+  toId?:            Uint8Array;   
   returnSecret?:    boolean;
 }
 
 export interface ChannelKeys {
-  address:     Uint8Array;        // 43 bytes (PaymentAddress)
-  ivk:         Uint8Array;        // 32 bytes
+  address:     Uint8Array;        
+  ivk:         Uint8Array;     
   extfvk:      Uint8Array;
-  spendingKey: Uint8Array | null; // 169 bytes — only if returnSecret: true
+  spendingKey: Uint8Array | null; 
 }
 
 export interface EncryptParams {
-  address:    Uint8Array;         // 43 bytes (PaymentAddress)
-  data:       Uint8Array;         // plaintext bytes to encrypt
-  returnSsk?: boolean;            // whether to return the symmetric session key
+  address:    Uint8Array;         
+  data:       Uint8Array;
+  returnSsk?: boolean;
 }
 
 export interface EncryptedPayload {
-  ephemeralPublicKey: Uint8Array;        // 32 bytes
+  ephemeralPublicKey: Uint8Array;      
   encryptedData:      Uint8Array;
-  symmetricKey:       Uint8Array | null; // 32 bytes — only if returnSsk: true
+  symmetricKey:       Uint8Array | null; 
 }
 
 export interface DecryptParams {
-  ivk?:  Uint8Array;   // 32 bytes — incoming viewing key
-  epk?:  Uint8Array;   // 32 bytes — ephemeral public key
-  data:  Uint8Array;   // the encrypted bytes
-  ssk?:  Uint8Array;   // 32 bytes — symmetric session key (alternative to ivk+epk)
+  ivk?:  Uint8Array | null;   
+  epk?:  Uint8Array | null;   
+  data:  Uint8Array;
+  ssk?:  Uint8Array | null;   
 }
 
+// imitates the shape of DataDescriptor from verus-typescript-primitives, but only the fields relevant to decryption
+export interface EncryptedDescriptor {
+  objectdata: Uint8Array;
+  epk?:       Uint8Array | null;
+  ivk?:       Uint8Array | null;
+  ssk?:       Uint8Array | null;
+}
 
-export async function deriveKeys(params: DerivationParams): Promise<ChannelKeys> {
-  await wasmReady;
-
+/**
+ * Derives Sapling channel keys for encryption/decryption.
+ */
+export function z_getEncryptionAddress(params: DerivationParams): ChannelKeys {
   const result = z_get_encryptionaddress(
     params.seed            ?? null,
     params.spendingKey     ?? null,
@@ -67,10 +71,7 @@ export async function deriveKeys(params: DerivationParams): Promise<ChannelKeys>
   };
 }
 
-
-export async function encryptData(params: EncryptParams): Promise<EncryptedPayload> {
-  await wasmReady;
-
+export function encryptData(params: EncryptParams): EncryptedPayload {
   const result = encrypt_v_data(
     params.address,
     params.data,
@@ -84,20 +85,20 @@ export async function encryptData(params: EncryptParams): Promise<EncryptedPaylo
   };
 }
 
-/**
- * Decrypts data encrypted to a Sapling PaymentAddress.
- * Either provide ivk + epk (viewing key path),
- * or ssk alone (symmetric key path if you have it from encryptData).
- */
-export async function decryptData(params: DecryptParams): Promise<Uint8Array> {
-  await wasmReady;
 
-  return new Uint8Array(
-    decrypt_v_data(
-      params.ivk  ?? null,
-      params.epk  ?? null,
-      params.data,
-      params.ssk  ?? null,
-    )
-  );
+/**
+ * Decrypts directly from a DataDescriptor shaped object.
+ * Automatically picks the right key — ivk first, then ssk.
+ * A real DataDescriptor from verus-typescript-primitives satisfies
+ * the EncryptedDescriptor interface and can be passed directly.
+ */
+export function decryptData(descriptor: EncryptedDescriptor): Uint8Array {
+  const ivk = descriptor.ivk ?? null;
+  const epk = descriptor.epk ?? null;
+  const ssk = descriptor.ssk ?? null;
+
+  if (ivk) return new Uint8Array(decrypt_v_data(ivk, epk, descriptor.objectdata, null));
+  if (ssk) return new Uint8Array(decrypt_v_data(null, null, descriptor.objectdata, ssk));
+
+  throw new Error('descriptor has no decryption key — needs ivk or ssk');
 }

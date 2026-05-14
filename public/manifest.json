@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Verus zSupport API",
+  "name": "veruszsupportlib",
   "version": "2.0.0",
   "description": "Create encryption addresses, encrypt and decrypt data",
   "icons": {
