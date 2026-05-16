@@ -1,245 +1,127 @@
-## Verus Encrypted Channel Key Derivation, Encryption and Decryption Extension
+# veruszsupportlib
 
-## Most Awesome Encryption Tool Ever on the Web
+Sapling encryption and key derivation for Verus DREAM Apps.
 
-This extension provides functions, written in Rust and compiled to WebAssembly (WASM), for use in a modern web applications.
+WebAssembly powered library exposing three primitives:
 
-The core Rust crate, `veruszsupport`, handles Zcash Sapling key generation and symmetric key derivation, exposed via Chrome extension that injects a global API into web pages. 
+- `z_getEncryptionAddress` — derive Sapling channel keys
+- `encryptData` — encrypt bytes to a payment address
+- `decryptData` — decrypt with viewing key or symmetric key
 
-This project's core logic is written in Rust which is then transalated into a wasm compatible code in Rust under veruszsupportweb library
+## Installation
 
-See the `Test Web App` Section.
+\`\`\`bash
+yarn add veruszsupportlib
+\`\`\`
 
-#### Core Logic:
+## Usage
 
+### Derive channel keys
 
-https://github.com/iamahmedshahh/librustzcash/blob/ka_agree-security-fixes-updates/verus_zfunc/src/lib.rs
-
-
----
-
-## Prerequisites
-
-Before you begin, ensure you have the following tools installed:
-
-- **Rust:** https://www.rust-lang.org/tools/install
-- **wasm-pack:** `cargo install wasm-pack`
-- **Rustup:** `sudo apt install rustup`
-- **Must Install:** `npm install vite-plugin-node-polyfills`
-
----
-
-## Project Structure
-
-- **/veruszsupportweb/**: The native Rust crate containing all core cryptographic logic and WASM bindings.
-- **zsupport (root)**: The Vue.js + TypeScript frontend application and Chrome extension that consumes the WASM module.
-- **src/inject.ts**: Injected script that exposes `window.verusCrypto` API to web pages.
-- **src/App.vue**: Test web page for generating AppEncryptionRequest QR codes.
-- **proxy.ts**: Node.js proxy server that forwards RPC calls to verusd (required for CORS).
-
----
-
-## Development Workflow
-
-### 1. Build the WebAssembly Module
-```bash
-cd veruszsupportweb
-wasm-pack build --target web --release --out-dir pkg
-```
-
-### 2. Integrate WASM with the Vue Project
-```bash
-yarn install ./veruszsupportweb/pkg
-```
-
-Re-run this every time you rebuild the WASM package.
-
-### 3. Build the Extension
-```bash
-yarn install
-yarn build
-```
-
-### 4. Load the Extension in Chrome
-```
-Go to chrome://extensions/
-Enable Developer Mode
-Click "Load unpacked" and select the dist folder
-```
-
-### refer to end of the readme for usage and seeing it in action, example usage explained via exposed API sections
-
----
-
-## Exposed APIs
-
-The extension injects a global API at `window.verusCrypto`. Wait for the `verusCryptoReady` event before accessing it.
-
-All functions operate on raw `Buffer` types at the boundary. Callers are responsible for encoding/decoding (bech32, hex) as needed.
-```javascript
-window.addEventListener('verusCryptoReady', () => {
-  const verusCrypto = window.verusCrypto;
-});
-```
-
----
-
-### `zGetEncryptionAddress`
-
-Derives a deterministic Sapling z-address and associated keys for an encrypted communication channel between two VerusIDs.
-
-**Signature:**
 ```typescript
-zGetEncryptionAddress(params: {
-  seed?:            Buffer;   // master seed bytes — provide seed OR spendingKey
-  spendingKey?:     Buffer;   // Buffer of "secret-extended-key-main1..." spendingkey
-  hdIndex?:         number;   // HD account index (default: 0, seed mode only)
-  encryptionIndex?: number;   // channel sub-index (default: 0)
-  fromId?:          Buffer;   // sender VerusID as raw hash160 bytes
-  toId?:            Buffer;   // recipient VerusID as raw hash160 bytes
-  returnSecret?:    boolean;  // if true, returns the channel spending key (default: false)
-}): {
-  address:     Buffer;         // raw 43-byte Sapling payment address
-  ivk:         Buffer;         // 32-byte incoming viewing key
-  extfvk:      Buffer;         // 169-byte extended full viewing key
-  spendingKey: Buffer | null;  // 169-byte extended spending key, or null
-}
-```
+import { z_getEncryptionAddress } from 'veruszsupportlib';
 
-**Example:**
-```javascript
-const { decodeDestination } = require('verus-typescript-primitives');
-const { SaplingPaymentAddress } = require('verus-typescript-primitives');
-
-const fromIdBytes = Buffer.from(decodeDestination('alice@'));
-const toIdBytes   = Buffer.from(decodeDestination('bob@'));
-
-const keys = window.verusCrypto.zGetEncryptionAddress({
-  seed:            Buffer.from('aa'.repeat(32), 'hex'),
+const keys = await z_getEncryptionAddress({
+  seed:            seedBytes,        // Uint8Array
+  fromId:          fromIdBytes,      // Uint8Array, 20 bytes (hash160)
+  toId:            toIdBytes,        // Uint8Array, 20 bytes (hash160)
   encryptionIndex: 0,
-  fromId:          fromIdBytes,
-  toId:            toIdBytes,
 });
 
-// Convert raw address to bech32 string for display
-const addr = new SaplingPaymentAddress();
-addr.fromBuffer(keys.address);
-console.log('Channel address:', addr.toAddressString()); // "zs1..."
-console.log('IVK (hex):', keys.ivk.toString('hex'));
+// keys.address     → Uint8Array, 43 bytes
+// keys.ivk         → Uint8Array, 32 bytes
+// keys.extfvk      → Uint8Array
+// keys.spendingKey → Uint8Array | null
 ```
 
----
+### Encrypt data
 
-### `encryptData`
-
-Encrypts arbitrary bytes for a given Sapling address.
-
-**Signature:**
 ```typescript
-encryptData(params: {
-  address:         Buffer;   // raw 43-byte Sapling payment address
-  data_to_encrypt: Buffer;   // data to encrypt
-  returnSsk?:      boolean;  // if true, returns the symmetric session key (default: false)
-}): {
-  ephemeralPublicKey: Buffer;        // 32-byte EPK
-  encrypted_data:     Buffer;        // ciphertext bytes
-  symmetricKey:       Buffer | null; // symmetric session key, or null
-}
-```
+import { encryptData } from 'veruszsupportlib';
 
-**Example:**
-```javascript
-const encrypted = window.verusCrypto.encryptData({
-  address:         keys.address,
-  data_to_encrypt: Buffer.from('hello world'),
-  returnSsk:       true,
+const encrypted = await encryptData({
+  address: keys.address,
+  data:    new TextEncoder().encode('hello'),
 });
 
-console.log('EPK:', encrypted.ephemeralPublicKey.toString('hex'));
-console.log('Encrypted Data:', encrypted.encrypted_data.toString('hex'));
+// encrypted.encryptedData       → Uint8Array
+// encrypted.ephemeralPublicKey  → Uint8Array, 32 bytes
+// encrypted.symmetricKey        → Uint8Array | null
 ```
 
----
+### Decrypt data
 
-### `decryptData`
+Accepts any object with the encrypted fields — automatically picks ivk or ssk:
 
-Decrypts data using either IVK + EPK or a symmetric session key directly.
-
-**Signature:**
 ```typescript
-decryptData(params: {
-  ivk?:            Buffer;  // 32-byte incoming viewing key (use with epk)
-  epk?:            Buffer;  // 32-byte ephemeral public key (use with ivk)
-  data_to_decrypt: Buffer;  // encrypted data bytes
-  ssk?:            Buffer;  // symmetric session key — if provided, ivk and epk are ignored
-}): Buffer  // decrypted plaintext bytes
+import { decryptData } from 'veruszsupportlib';
+
+const plaintext = await decryptData({
+  objectdata: encrypted.encryptedData,
+  ivk:        keys.ivk,
+  epk:        encrypted.ephemeralPublicKey,
+});
 ```
 
-**Example:**
-```javascript
-// Decrypt using IVK + EPK
-const decryptedData = window.verusCrypto.decryptData({
-  ivk:            keys.ivk,
-  epk:            encrypted.ephemeralPublicKey,
-  data_to_decrypt: encrypted.encrypted_data,
+A `DataDescriptor` from `verus-typescript-primitives` also satisfies the input shape:
+
+```typescript
+import { DataDescriptor } from 'verus-typescript-primitives';
+
+const descriptor = new DataDescriptor({
+  objectdata: encryptedBytes,
+  ivk:        ivkBuffer,
+  epk:        epkBuffer,
 });
 
-// Or decrypt using SSK directly
-const decryptedData = window.verusCrypto.decryptData({
-  ssk:            encrypted.symmetricKey,
-  data_to_decrypt: encrypted.encrypted_data,
-});
-
-console.log('Decrypted:', plaintext.toString());
+const plaintext = await decryptData(descriptor);
 ```
 
----
+## API
 
-## Test Web App (RequestGenerator.vue)
+### z_getEncryptionAddress(params) → ChannelKeys
 
-Conversions to Strings are kept as little as possible and the extension level buffers and in rust layer zeroized types are used.
+| Param           | Type       | Description                          |
+|-----------------|------------|--------------------------------------|
+| seed            | Uint8Array | Raw seed bytes (optional)            |
+| spendingKey     | Uint8Array | 169 byte extended spending key (opt) |
+| hdIndex         | number     | HD derivation index (optional)       |
+| encryptionIndex | number     | Channel encryption index (optional)  |
+| fromId          | Uint8Array | 20 byte hash160 of from VerusID      |
+| toId            | Uint8Array | 20 byte hash160 of to VerusID        |
+| returnSecret    | boolean    | Return the spending key in result    |
 
-The test web app uses functions from `Verus-typescript-primitives` such as `SaplingPaymentAddress` to convert the binary data back to readable standardized format.
+Returns `ChannelKeys` with `address`, `ivk`, `extfvk`, `spendingKey`.
 
+### encryptData(params) → EncryptedPayload
 
- Runs at `http://localhost:5173/` derives channel keys by calling the extension which are then used to generate a signed `AppEncryptionRequest` as a QR code and deeplink that can be scanned by Verus Mobile
+| Param      | Type       | Description                          |
+|------------|------------|--------------------------------------|
+| address    | Uint8Array | 43 byte Sapling PaymentAddress       |
+| data       | Uint8Array | Bytes to encrypt                     |
+| returnSsk  | boolean    | Return the symmetric session key if requested    |
 
+Returns `EncryptedPayload` with `encryptedData`, `ephemeralPublicKey`, `symmetricKey`.
 
- Please have a running `Verus` daemon see `https://github.com/VerusCoin/VerusCoin` if not setup
+### decryptData(descriptor) → Uint8Array
 
-### How it works
+Accepts an object with `objectdata` and either:
+- `ivk` (+ optional `epk`) — uses viewing key path
+- `ssk` — uses symmetric key path
 
-1. **Key Derivation** — Calls `window.verusCrypto.zGetEncryptionAddress` via the injected extension API. Provide either a hex seed or a bech32 spending key, along with `fromId` and `toId` VerusID addresses. The extension WASM derives the channel keys deterministically.
+Returns decrypted bytes.
 
-2. **Request Building** — Constructs an `AppEncryptionRequestDetails` with the derived channel address as `encryptResponseToAddress`. Wraps it in a `GenericRequest` alongside an `AuthenticationRequest`.
+## Compatibility
 
-3. **Signing** — Calls `signdata` RPC on verusd (via the proxy on port `27487`) with the request's SHA256 hash. The signature is attached to the request.
+| Environment              | Supported |
+|--------------------------|-----------|
+| Vite / Webpack / Rollup  | Yes       |
+| Next.js, Nuxt, SvelteKit | Yes       |
+| Node.js 16+              | Yes       |
+| Deno, Bun                | Yes       |
+| Electron, Tauri          | Yes       |
+| React Native             | No        |
 
-4. **QR Generation** — Encodes the signed request as a `verus://` deeplink and renders it as a QR code.
+## License
 
-### Running the full test
-```bash
-# Terminal 1 — start verusd
-verusd &
-
-# Terminal 2 — start the RPC proxy (bridges browser → verusd, handles CORS)
-npx tsx proxy.ts
-# proxy running on http://localhost:27487 → verusd at localhost:27486
-
-# Terminal 3 — start the test web app
-yarn dev
-
-# Terminal 4 — build and load extension in Chrome
-yarn build
-# Load dist/ as unpacked extension in chrome://extensions/
-```
-
-This starts a proxy on `http://localhost:27487` that forwards all RPC calls to verusd on port `27486`. Set the port to `27487` in the App.vue RPC config panel.
-
-Then open `http://localhost:5173/`, fill in the Signing Identity field with a VerusID loaded in your verusd wallet, and click **Derive → Build → Sign → QR**. Scan the QR with Verus Mobile.
-
----
-
-## Licensing
-
-This project is licensed under your choice of either the [MIT License](LICENSES/LICENSE-MIT) or the [Apache License, Version 2.0](LICENSES/LICENSE-APACHE-2.0).
+MIT

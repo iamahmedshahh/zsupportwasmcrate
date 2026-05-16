@@ -8,13 +8,14 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
       name: 'veruszsupportlib',
-      fileName: 'index',
+      fileName: (format) => `index.${format}.js`,
       formats: ['es'],
     },
     rollupOptions: {
       external: [],
     },
     copyPublicDir: false,
+    assetsInlineLimit: 100_000_000,
   },
   test: {
     globals: true,

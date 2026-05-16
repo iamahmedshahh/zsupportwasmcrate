@@ -1,28 +1,28 @@
 {
   "name": "veruszsupportlib",
   "version": "1.0.0",
+  "description": "Sapling encryption and key derivation for Verus DREAM Apps",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
+  "license": "MIT",
+  "main": "./dist/index.es.js",
+  "module": "./dist/index.es.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.es.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist && cp ./veruszsupportweb/pkg/lib/veruszsupport_bg.wasm ./dist/",
+    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "buffer": "^6.0.3",
-    "verus-typescript-primitives": "https://github.com/VerusCoin/verus-typescript-primitives.git",
-    "veruszsupport": "file:veruszsupportweb/pkg/lib"
+    "veruszsupport": "file:veruszsupportweb/pkg/"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
