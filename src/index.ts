@@ -30,15 +30,8 @@ export interface EncryptParams {
 
 export interface EncryptedPayload {
   ephemeralPublicKey: Uint8Array;      
-  encryptedData:      Uint8Array;
+  objectdata:      Uint8Array;
   symmetricKey:       Uint8Array | null; 
-}
-
-export interface DecryptParams {
-  ivk?:  Uint8Array | null;   
-  epk?:  Uint8Array | null;   
-  data:  Uint8Array;
-  ssk?:  Uint8Array | null;   
 }
 
 // imitates the shape of DataDescriptor from verus-typescript-primitives, but only the fields relevant to decryption
@@ -80,7 +73,7 @@ export function encryptData(params: EncryptParams): EncryptedPayload {
 
   return {
     ephemeralPublicKey: new Uint8Array(result.ephemeralPublicKey),
-    encryptedData:      new Uint8Array(result.encryptedData),
+    objectdata:      new Uint8Array(result.objectdata),
     symmetricKey:       result.symmetricKey ? new Uint8Array(result.symmetricKey) : null,
   };
 }
