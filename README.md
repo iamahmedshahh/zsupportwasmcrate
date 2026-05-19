@@ -6,13 +6,13 @@ WebAssembly powered library exposing three primitives:
 
 - `z_getEncryptionAddress` — derive Sapling channel keys
 - `encryptData` — encrypt bytes to a payment address
-- `decryptData` — decrypt with viewing key or symmetric key
+- `decryptData` — decrypt with viewing key + epk or just symmetric key
 
 ## Installation
 
-\`\`\`bash
+```bash
 yarn add veruszsupportlib
-\`\`\`
+```
 
 ## Usage
 
@@ -46,7 +46,7 @@ const encrypted = await encryptData({
 
 // encrypted.encryptedData       → Uint8Array
 // encrypted.ephemeralPublicKey  → Uint8Array, 32 bytes
-// encrypted.symmetricKey        → Uint8Array | null
+// encrypted.symmetricKey        → Uint8Array 169 bytes or null
 ```
 
 ### Decrypt data
@@ -120,7 +120,6 @@ Returns decrypted bytes.
 | Node.js 16+              | Yes       |
 | Deno, Bun                | Yes       |
 | Electron, Tauri          | Yes       |
-| React Native             | No        |
 
 ## License
 
