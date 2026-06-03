@@ -73,7 +73,7 @@ export function encryptData(params: EncryptParams): EncryptedPayload {
 
   return {
     ephemeralPublicKey: new Uint8Array(result.ephemeralPublicKey),
-    objectdata:      new Uint8Array(result.objectdata),
+    objectdata:      new Uint8Array(result.encryptedData),
     symmetricKey:       result.symmetricKey ? new Uint8Array(result.symmetricKey) : null,
   };
 }

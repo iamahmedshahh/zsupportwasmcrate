@@ -361,7 +361,7 @@ function sA(A) {
   );
   return {
     ephemeralPublicKey: new Uint8Array(I.ephemeralPublicKey),
-    objectdata: new Uint8Array(I.objectdata),
+    objectdata: new Uint8Array(I.encryptedData),
     symmetricKey: I.symmetricKey ? new Uint8Array(I.symmetricKey) : null
   };
 }
