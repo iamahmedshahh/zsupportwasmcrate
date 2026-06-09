@@ -1,3 +1,7 @@
+import { DataDescriptor } from 'verus-typescript-primitives';
+import { VdxfUniValue } from 'verus-typescript-primitives';
+import { DataDescriptorKey } from 'verus-typescript-primitives';
+export { DataDescriptor, VdxfUniValue, DataDescriptorKey };
 export interface DerivationParams {
     seed?: Uint8Array;
     spendingKey?: Uint8Array;
@@ -34,10 +38,20 @@ export interface EncryptedDescriptor {
  */
 export declare function z_getEncryptionAddress(params: DerivationParams): ChannelKeys;
 export declare function encryptData(params: EncryptParams): EncryptedPayload;
-/**
- * Decrypts directly from a DataDescriptor shaped object.
- * Automatically picks the right key — ivk first, then ssk.
- * A real DataDescriptor from verus-typescript-primitives satisfies
- * the EncryptedDescriptor interface and can be passed directly.
- */
 export declare function decryptData(descriptor: EncryptedDescriptor): Uint8Array;
+export interface EncryptDescriptorParams {
+    descriptor: DataDescriptor;
+    address: Uint8Array;
+    returnSsk?: boolean;
+}
+export interface EncryptDescriptorResult {
+    descriptor: DataDescriptor;
+    ssk: Uint8Array | null;
+}
+export interface DecryptDescriptorParams {
+    descriptor: DataDescriptor;
+    ivk?: Uint8Array;
+    ssk?: Uint8Array;
+}
+export declare function encryptDescriptor(params: EncryptDescriptorParams): EncryptDescriptorResult;
+export declare function decryptDescriptor(params: DecryptDescriptorParams): DataDescriptor;

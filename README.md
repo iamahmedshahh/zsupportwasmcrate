@@ -11,7 +11,7 @@ WebAssembly powered library exposing three primitives:
 ## Installation
 
 ```bash
-yarn add veruszsupportlib
+yarn add github:iamahmedshahh/veruszsupportlib#veruszsupportlib
 ```
 
 ## Usage
@@ -75,6 +75,104 @@ const descriptor = new DataDescriptor({
 });
 
 const plaintext = await decryptData(descriptor);
+```
+
+
+
+# New Functions 
+
+
+## encryptDescriptor
+
+Encrypts a `DataDescriptor` to a Sapling payment address. 
+
+
+### Parameters
+
+| Field | Type | Description |
+|---|---|---|
+| `descriptor` | `DataDescriptor` | Your data + optional `mimeType`, `label`, `salt` |
+| `address` | `Uint8Array` | 43-byte Sapling payment address |
+| `returnSsk` | `boolean` | Optional. If `true`, returns the symmetric session key |
+
+### Returns
+
+```typescript
+{
+  descriptor: DataDescriptor;  
+  ssk:        Uint8Array | null; 
+}
+```
+
+### Example
+
+```typescript
+import { encryptDescriptor, DataDescriptor } from 'veruszsupportlib';
+import { Buffer } from 'buffer';
+
+const plain = new DataDescriptor({
+  objectdata: Buffer.from('hello from library'),
+  mimeType:   'text/plain',
+});
+
+const { descriptor: encrypted } = encryptDescriptor({
+  descriptor: plain,
+  address:    keys.address,
+});
+
+console.log(encrypted.toJson());
+```
+
+---
+
+## decryptDescriptor
+
+Decrypts an encrypted `DataDescriptor` and returns the original.
+
+### Parameters
+
+| Field | Type | Description |
+|---|---|---|
+| `descriptor` | `DataDescriptor` | Encrypted descriptor (cipher in `objectdata`, `epk` present) |
+| `ivk` | `Uint8Array` | Incoming viewing key (use this OR `ssk`) |
+| `ssk` | `Uint8Array` | Symmetric session key (use this OR `ivk`) |
+
+### Returns
+
+The original `DataDescriptor` with `objectdata`, `salt`, and any `mimeType`/`label` that was set during encryption.
+
+### Example
+
+```typescript
+import { decryptDescriptor, DataDescriptor } from 'veruszsupportlib';
+
+// If received as JSON over the wire:
+const encrypted = DataDescriptor.fromJson(receivedJson);
+
+const decrypted = decryptDescriptor({
+  descriptor: encrypted,
+  ivk:        keys.ivk,
+});
+
+console.log(decrypted.objectdata.toString('utf8'));   // "hello from library"
+console.log(decrypted.mimeType);                       // "text/plain"
+```
+
+---
+
+## Installation
+
+The library is on the `veruszsupportlib` branch:
+
+```bash
+yarn add github:iamahmedshahh/veruszsupportlib#veruszsupportlib
+```
+
+## Building WASM
+
+```bash
+cd veruszsupportweb
+wasm-pack build --target web --release --out-dir pkg
 ```
 
 ## API

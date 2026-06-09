@@ -16,19 +16,25 @@
   "files": [
     "dist"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist"
   },
   "dependencies": {
-    "veruszsupport": "file:veruszsupportweb/pkg/"
+    "bn.js": "^5.2.3",
+    "buffer": "^6.0.3",
+    "verus-typescript-primitives": "github:VerusCoin/verus-typescript-primitives"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.2.0",
     "@types/node": "^22.0.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.0",
     "vite-plugin-wasm": "^3.6.0",
-    "vitest": "^3.0.0"
+    "veruszsupport": "file:veruszsupportweb/pkg/"
+   
   }
 }
