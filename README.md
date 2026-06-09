@@ -11,7 +11,7 @@ WebAssembly powered library exposing three primitives:
 ## Installation
 
 ```bash
-yarn add github:iamahmedshahh/veruszsupportlib#veruszsupportlib
+yarn add github:iamahmedshahh/zsupportextension#veruscryptolibrary
 ```
 
 ## Usage
